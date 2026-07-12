@@ -1,0 +1,6 @@
+{
+  "name": "BabyChef - Alimentación de Bebé",
+  "description": "Asistente inteligente de alimentación infantil y recetas para bebés. Registra el perfil y crecimiento de tu bebé, planifica menús, genera listas de compras y chatea con un experto en nutrición de IA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
