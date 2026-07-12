@@ -614,5 +614,212 @@ export const RECIPES_DB: Recipe[] = [
     ],
     category: "almuerzo",
     attributes: ["sin huevo", "sin leche", "sin azúcar", "rica en hierro"]
+  },
+  {
+    id: "r13",
+    name: "Arepitas de Maíz con Aguacate Cremoso",
+    ageRange: "18 meses",
+    prepTime: 10,
+    cookTime: 12,
+    servings: 3,
+    ingredients: [
+      "1/2 taza de harina de maíz precocida (blanca o amarilla)",
+      "1/2 taza de agua tibia",
+      "1/2 aguacate maduro mediano",
+      "1 cucharadita de aceite de oliva para la plancha"
+    ],
+    steps: [
+      "En un bol pequeño, vierte el agua tibia y agrega la harina de maíz poco a poco, mezclando constantemente para evitar grumos.",
+      "Amasa bien con las manos por 2 minutos hasta conseguir una masa suave, húmeda y moldeable que no se agriete.",
+      "Forma pequeñas esferas de masa y aplástalas suavemente con las palmas de las manos para dar forma de arepitas delgadas (de unos 5-6 cm de diámetro).",
+      "Calienta una plancha o sartén antiadherente a fuego medio y engrásala ligeramente con el aceite de oliva.",
+      "Cocina las arepitas durante 5-6 minutos por cada lado, hasta que se forme una capa crujiente muy fina en la superficie pero permanezcan blandas por dentro.",
+      "Abre las arepitas por la mitad y rellénalas con aguacate maduro machacado con tenedor (estilo puré) antes de servirlas tibias."
+    ],
+    tips: [
+      "El maíz es naturalmente libre de gluten y aporta carbohidratos saludables de fácil digestión.",
+      "El aguacate aporta ácido oleico (grasas saludables cruciales para el desarrollo cognitivo del lactante)."
+    ],
+    variations: [
+      "Puedes mezclar un poco de queso fresco sin sal rallado o pechuga de pollo deshilachada con el aguacate para un relleno más nutritivo."
+    ],
+    nutritionalInfo: {
+      calories: 125,
+      proteins: 2.0,
+      carbs: 16,
+      fats: 6.2,
+      iron: "0.5 mg",
+      calcium: "12 mg",
+      fiber: "2.5 g"
+    },
+    vitamins: ["Vitamina E", "Vitamina B6", "Ácido Fólico"],
+    minerals: ["Potasio", "Magnesio", "Fósforo"],
+    texture: "Sólido blando manejable (BLW)",
+    difficulty: "Fácil",
+    conservation: "Consumir al instante. Las arepitas se ponen duras al enfriarse y el aguacate se oxida.",
+    freezing: "Se pueden congelar las arepitas precocidas sin el relleno. Duran hasta 2 meses.",
+    reheating: "Calentar en sartén con tapa añadiendo unas gotas de agua para que queden tiernas.",
+    warnings: [
+      "Asegúrate de que el relleno esté tibio o a temperatura ambiente.",
+      "Utiliza harina de maíz 100% pura sin conservantes ni sodio añadido."
+    ],
+    category: "desayuno",
+    attributes: ["sin huevo", "sin leche", "sin gluten", "sin azúcar"]
+  },
+  {
+    id: "r14",
+    name: "Estofado de Ternera con Papas y Calabaza Tierna",
+    ageRange: "18 meses",
+    prepTime: 15,
+    cookTime: 30,
+    servings: 4,
+    ingredients: [
+      "150g de carne de ternera magra picada o picada muy fina",
+      "1 papa mediana pelada y cortada en cubitos pequeños",
+      "1/2 taza de calabaza cortada en trozos pequeños",
+      "1/2 zanahoria picada fina",
+      "1/2 taza de caldo de carne casero sin sal",
+      "1 cucharadita de aceite de oliva"
+    ],
+    steps: [
+      "En una olla pequeña, calienta el aceite de oliva a fuego medio y sella la ternera picada por 3 minutos hasta que cambie de color.",
+      "Agrega la zanahoria picada, la papa en cubitos y la calabaza.",
+      "Vierte el caldo de carne casero sin sal (debe cubrir ligeramente los ingredientes).",
+      "Lleva a ebullición, luego reduce el fuego a bajo, tapa la olla y cocina a fuego lento durante 25-30 minutos, hasta que las papas y la calabaza se deshagan al tocarlas y la ternera esté extremadamente tierna.",
+      "Chafa las verduras ligeramente con un tenedor para dar una consistencia de estofado espeso con trocitos blandos manejables por el bebé."
+    ],
+    tips: [
+      "Garantiza un aporte óptimo de hierro hemo de alta absorción, esencial para evitar la anemia ferropénica en la fase de crecimiento acelerado.",
+      "El caldo casero aporta aminoácidos y colágeno natural que protege la barrera intestinal."
+    ],
+    variations: [
+      "Puedes agregar un toque sutil de comino molido para iniciar a tu bebé en condimentos saludables y naturales."
+    ],
+    nutritionalInfo: {
+      calories: 145,
+      proteins: 11.5,
+      carbs: 15,
+      fats: 4.8,
+      iron: "2.3 mg - Muy alto en hierro hemo",
+      calcium: "20 mg",
+      fiber: "2.1 g"
+    },
+    vitamins: ["Vitamina B12", "Vitamina A (Beta-caroteno)", "Vitamina B6"],
+    minerals: ["Hierro (Hemo)", "Zinc", "Potasio", "Fósforo"],
+    texture: "Sólidos chafados con tenedor / Texturizado blando",
+    difficulty: "Medio",
+    conservation: "Conserva en la nevera en un recipiente hermético hasta por 48 horas.",
+    freezing: "Apto para congelar por un máximo de 2 meses.",
+    reheating: "Calentar bien en olla, añadiendo un poquito de agua si se ha resecado, revolviendo para evitar puntos calientes.",
+    warnings: [
+      "Revisa que la carne no tenga trozos grasosos ni nervios que puedan dificultar el masticado con las encías.",
+      "Sirve siempre tibio, nunca caliente."
+    ],
+    category: "almuerzo",
+    attributes: ["sin huevo", "sin leche", "sin gluten", "sin azúcar", "rica en hierro"]
+  },
+  {
+    id: "r15",
+    name: "Mini Albóndigas de Pollo y Salsa de Tomate Casera",
+    ageRange: "9 meses",
+    prepTime: 15,
+    cookTime: 20,
+    servings: 4,
+    ingredients: [
+      "120g de pechuga de pollo molida",
+      "2 cucharadas de avena molida (harina de avena)",
+      "2 tomates maduros medianos (pelados y sin semillas)",
+      "1/4 cucharadita de albahaca seca en polvo",
+      "1 cucharadita de aceite de oliva"
+    ],
+    steps: [
+      "En un bol, mezcla el pollo molido con la avena molida. Integra bien con tus manos limpias y forma mini albóndigas del tamaño de una uva grande (para que el bebé las coja fácilmente).",
+      "En una olla pequeña, machaca los tomates pelados y sin semillas con un chorrito de agua para formar una salsa rústica. Añade la albahaca.",
+      "Coloca las mini albóndigas con mucho cuidado dentro de la salsa de tomate hirviendo a fuego lento.",
+      "Tapa y cocina a fuego bajo durante 15-20 minutos, girándolas suavemente a mitad del tiempo para que se cuezan perfectamente por dentro.",
+      "Sirve dos o tres albóndigas bañadas con un poco de la salsa de tomate tibia."
+    ],
+    tips: [
+      "La vitamina C presente en el tomate ayuda a absorber mejor los nutrientes minerales de la avena y el pollo.",
+      "La avena hace que la carne de las albóndigas quede jugosa, tierna y fácil de digerir."
+    ],
+    variations: [
+      "Puedes agregar un poco de calabacín rallado muy fino a la masa de las albóndigas para aumentar el consumo de verduras de forma camuflada."
+    ],
+    nutritionalInfo: {
+      calories: 110,
+      proteins: 9.8,
+      carbs: 6.0,
+      fats: 3.2,
+      iron: "1.1 mg",
+      calcium: "18 mg",
+      fiber: "1.4 g"
+    },
+    vitamins: ["Vitamina C", "Vitamina B6", "Licopeno"],
+    minerals: ["Zinc", "Potasio", "Fósforo"],
+    texture: "Sólido blando desmenuzable (BLW)",
+    difficulty: "Medio",
+    conservation: "Conserva en nevera hasta por 24 horas en un recipiente cerrado.",
+    freezing: "Puedes congelarlas ya cocidas con su salsa por 2 meses.",
+    reheating: "Calentar al baño maría o microondas suavemente.",
+    warnings: [
+      "Asegúrate de que las albóndigas estén bien cocidas y se deshagan con una ligera presión del tenedor."
+    ],
+    category: "almuerzo",
+    attributes: ["sin huevo", "sin leche", "sin azúcar"]
+  },
+  {
+    id: "r16",
+    name: "Muffin de Zanahoria y Manzana (Especial Bebé)",
+    ageRange: "9 meses",
+    prepTime: 10,
+    cookTime: 18,
+    servings: 6,
+    ingredients: [
+      "1 zanahoria mediana pelada y finamente rallada",
+      "1 manzana dulce madura rallada",
+      "1/2 taza de harina de avena integral",
+      "1 cucharadita de levadura química sin sodio",
+      "1 cucharada de aceite de coco derretido",
+      "1 pizca de canela de Ceylán"
+    ],
+    steps: [
+      "Precalienta el horno a 180°C y prepara moldes para muffins pequeños de silicona.",
+      "En un bol hondo, combina la zanahoria rallada, la manzana rallada y el aceite de coco derretido.",
+      "Agrega la harina de avena, la canela de Ceylán y la levadura química sin sodio.",
+      "Mezcla todo con paciencia hasta que la avena absorba la humedad de las frutas y quede una masa espesa y densa.",
+      "Reparte la mezcla en los moldes llenando 3/4 partes.",
+      "Hornea por 15-18 minutos hasta que se sientan firmes al tacto y un palillo salga limpio.",
+      "Deja enfriar completamente antes de retirar de los moldes para que no se desmoronen."
+    ],
+    tips: [
+      "Esponjosos y deliciosamente dulces gracias al azúcar natural (fructosa) de la manzana y la zanahoria.",
+      "Perfectos para desayunos o meriendas rápidas fuera de casa."
+    ],
+    variations: [
+      "A partir de los 12 meses, puedes añadir un toque de plátano bien machacado para un sabor aún más dulce."
+    ],
+    nutritionalInfo: {
+      calories: 85,
+      proteins: 1.8,
+      carbs: 12,
+      fats: 2.5,
+      iron: "0.6 mg",
+      calcium: "22 mg",
+      fiber: "2.0 g"
+    },
+    vitamins: ["Vitamina A (Beta-caroteno)", "Vitamina B1", "Vitamina C"],
+    minerals: ["Potasio", "Calcio", "Magnesio"],
+    texture: "Sólido blando esponjoso",
+    difficulty: "Fácil",
+    conservation: "Guardar en un envase hermético en la nevera por un máximo de 3 días.",
+    freezing: "Congela perfecto envueltos individualmente por 3 meses.",
+    reheating: "Entibiar unos 10 segundos en microondas para recuperar esponjosidad.",
+    warnings: [
+      "Vigila que el bebé tome mordiscos pequeños adecuados a su masticación."
+    ],
+    category: "merienda",
+    attributes: ["sin huevo", "sin leche", "sin azúcar", "rica en fibra"]
   }
 ];
+

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, FormEvent } from "react";
+import { useState, useEffect, FormEvent, ChangeEvent } from "react";
 import {
   Baby,
   Flame,
@@ -155,6 +155,15 @@ export default function App() {
   const [newBabyPrefs, setNewBabyPrefs] = useState("");
   const [newBabyObs, setNewBabyObs] = useState("");
 
+  // Edit Profile Form states
+  const [isEditingBaby, setIsEditingBaby] = useState(false);
+  const [editBabyName, setEditBabyName] = useState("");
+  const [editBabyBirth, setEditBabyBirth] = useState("");
+  const [editBabyAllergies, setEditBabyAllergies] = useState("");
+  const [editBabyRestrictions, setEditBabyRestrictions] = useState("");
+  const [editBabyPrefs, setEditBabyPrefs] = useState("");
+  const [editBabyObs, setEditBabyObs] = useState("");
+
   // Article reading state
   const [selectedArticle, setSelectedArticle] = useState<GuideArticle | null>(null);
 
@@ -259,10 +268,10 @@ export default function App() {
     );
   };
 
-  const handleAddGrowthEntry = (weight: number, height: number, headCirc?: number, notes?: string) => {
+  const handleAddGrowthEntry = (weight: number, height: number, headCirc?: number, notes?: string, customDate?: string) => {
     const newEntry: GrowthEntry = {
       id: `growth-${Date.now()}`,
-      date: new Date().toISOString().split("T")[0],
+      date: customDate || new Date().toISOString().split("T")[0],
       weight,
       height,
       headCircumference: headCirc,
@@ -310,6 +319,77 @@ export default function App() {
     setNewBabyPrefs("");
     setNewBabyObs("");
     setIsAddingBaby(false);
+  };
+
+  const handleStartEditBaby = () => {
+    if (!activeBaby) return;
+    setEditBabyName(activeBaby.name);
+    setEditBabyBirth(activeBaby.birthDate);
+    setEditBabyAllergies(activeBaby.allergies.join(", "));
+    setEditBabyRestrictions(activeBaby.restrictedFoods.join(", "));
+    setEditBabyPrefs(activeBaby.preferences.join(", "));
+    setEditBabyObs(activeBaby.observations || "");
+    setIsEditingBaby(true);
+  };
+
+  const handleSaveEditBaby = (e: FormEvent) => {
+    e.preventDefault();
+    if (!editBabyName.trim() || !editBabyBirth) {
+      alert("Por favor rellena el nombre y la fecha de nacimiento.");
+      return;
+    }
+
+    setBabies(prev => prev.map(b => {
+      if (b.id === activeBabyId) {
+        return {
+          ...b,
+          name: editBabyName.trim(),
+          birthDate: editBabyBirth,
+          allergies: editBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
+          restrictedFoods: editBabyRestrictions.split(",").map(s => s.trim()).filter(Boolean),
+          preferences: editBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
+          observations: editBabyObs.trim()
+        };
+      }
+      return b;
+    }));
+
+    setIsEditingBaby(false);
+  };
+
+  const handleDeleteBaby = () => {
+    if (babies.length <= 1) {
+      alert("Debe haber al menos un perfil de bebé activo. Si deseas eliminar este, crea otro primero.");
+      return;
+    }
+    if (!confirm(`¿Estás segura de que deseas eliminar el perfil de ${activeBaby?.name}? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+    
+    const remaining = babies.filter(b => b.id !== activeBabyId);
+    setBabies(remaining);
+    setActiveBabyId(remaining[0].id);
+    setIsEditingBaby(false);
+  };
+
+  const handlePhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64String = reader.result as string;
+      setBabies(prev => prev.map(b => {
+        if (b.id === activeBabyId) {
+          return {
+            ...b,
+            photoUrl: base64String
+          };
+        }
+        return b;
+      }));
+    };
+    reader.readAsDataURL(file);
   };
 
   // --- AI Chat Assistant Handler ---
@@ -551,8 +631,12 @@ export default function App() {
                       </div>
                     </div>
                     {/* Baby avatar illustration */}
-                    <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 flex items-center justify-center text-white text-4xl shadow-lg ring-4 ring-emerald-50 dark:ring-slate-700 flex-shrink-0">
-                      👶
+                    <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 flex items-center justify-center text-white text-4xl shadow-lg ring-4 ring-emerald-50 dark:ring-slate-700 flex-shrink-0 overflow-hidden">
+                      {activeBaby?.photoUrl ? (
+                        <img src={activeBaby.photoUrl} alt={activeBaby.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                      ) : (
+                        "👶"
+                      )}
                     </div>
                   </div>
 
@@ -1302,9 +1386,30 @@ export default function App() {
                     {/* Baby Profile Info */}
                     <div className="lg:col-span-1 space-y-6">
                       <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4 text-center">
-                        <div className={`w-20 h-20 mx-auto rounded-full ${activeBaby?.photoColor} flex items-center justify-center text-3xl shadow-sm`}>
-                          👶
+                        <div className="relative group w-24 h-24 mx-auto">
+                          {activeBaby?.photoUrl ? (
+                            <img
+                              src={activeBaby.photoUrl}
+                              alt={activeBaby.name}
+                              className="w-24 h-24 mx-auto rounded-full object-cover border-4 border-pink-100 shadow-sm"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className={`w-24 h-24 mx-auto rounded-full ${activeBaby?.photoColor || "bg-pink-100"} flex items-center justify-center text-4xl shadow-sm`}>
+                              👶
+                            </div>
+                          )}
+                          <label className="absolute bottom-0 right-0 p-1.5 bg-pink-400 hover:bg-pink-500 text-white rounded-full cursor-pointer transition-colors shadow-xs">
+                            <span className="text-[10px] font-bold">📷</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handlePhotoChange}
+                              className="hidden"
+                            />
+                          </label>
                         </div>
+
                         <div>
                           <h3 className="font-display font-bold text-lg text-slate-800 dark:text-white">{activeBaby?.name}</h3>
                           <p className="text-xs text-slate-400">Fecha de Nacimiento: {activeBaby?.birthDate}</p>
@@ -1338,7 +1443,7 @@ export default function App() {
                           </div>
                           <div>
                             <span className="font-bold text-slate-500 block mb-0.5">Restringidos</span>
-                            <p className="text-[11px] text-slate-500">{activeBaby?.restrictedFoods.join(", ")}</p>
+                            <p className="text-[11px] text-slate-500">{activeBaby?.restrictedFoods.join(", ") || "Ninguno"}</p>
                           </div>
                           <div>
                             <span className="font-bold text-slate-500 block mb-0.5">Observaciones</span>
@@ -1346,13 +1451,105 @@ export default function App() {
                           </div>
                         </div>
 
+                        {/* Profile action buttons */}
+                        <div className="grid grid-cols-2 gap-2 pt-2">
+                          <button
+                            onClick={handleStartEditBaby}
+                            className="py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-sky-300 rounded-xl text-xs font-bold transition-all border border-sky-100 dark:border-transparent cursor-pointer"
+                          >
+                            Editar Datos
+                          </button>
+                          <button
+                            onClick={handleDeleteBaby}
+                            className="py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-all border border-rose-100 dark:border-transparent cursor-pointer"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+
                         <button
-                          onClick={() => setIsAddingBaby(true)}
-                          className="w-full mt-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors"
+                          onClick={() => {
+                            setIsAddingBaby(true);
+                            setIsEditingBaby(false);
+                          }}
+                          className="w-full mt-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
                         >
                           Crear Nuevo Perfil de Bebé
                         </button>
                       </div>
+
+                      {/* --- FORM: EDIT PROFILE --- */}
+                      {isEditingBaby && (
+                        <form onSubmit={handleSaveEditBaby} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-sky-200 dark:border-slate-700 shadow-sm space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
+                          <div className="flex justify-between items-center mb-2">
+                            <h4 className="text-xs font-bold text-sky-600 dark:text-sky-400">Editar Perfil</h4>
+                            <button onClick={() => setIsEditingBaby(false)} type="button" className="cursor-pointer">
+                              <X className="w-4 h-4 text-slate-400" />
+                            </button>
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre</label>
+                            <input
+                              type="text"
+                              value={editBabyName}
+                              onChange={e => setEditBabyName(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nacimiento</label>
+                            <input
+                              type="date"
+                              value={editBabyBirth}
+                              onChange={e => setEditBabyBirth(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Alergias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyAllergies}
+                              onChange={e => setEditBabyAllergies(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Preferencias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyPrefs}
+                              onChange={e => setEditBabyPrefs(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Restringidos (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyRestrictions}
+                              onChange={e => setEditBabyRestrictions(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Observaciones</label>
+                            <textarea
+                              value={editBabyObs}
+                              onChange={e => setEditBabyObs(e.target.value)}
+                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 h-16 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <button
+                            type="submit"
+                            className="w-full py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold cursor-pointer"
+                          >
+                            Guardar Cambios
+                          </button>
+                        </form>
+                      )}
 
                       {isAddingBaby && (
                         <form onSubmit={handleAddBabyProfile} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-3">
@@ -1419,6 +1616,7 @@ export default function App() {
                         entries={growthEntries}
                         onAddEntry={handleAddGrowthEntry}
                         onDeleteEntry={handleDeleteGrowthEntry}
+                        birthDate={activeBaby?.birthDate}
                       />
                     </div>
                   </div>

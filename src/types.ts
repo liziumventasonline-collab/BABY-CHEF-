@@ -21,6 +21,7 @@ export interface BabyProfile {
   preferences: string[];
   observations: string;
   photoColor: string; // Tailwind bg color class for avatar (e.g. 'bg-pink-100 text-pink-600')
+  photoUrl?: string; // Base64 or local ObjectURL or internet link
 }
 
 export interface NutritionalInfo {

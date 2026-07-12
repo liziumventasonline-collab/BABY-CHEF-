@@ -19,11 +19,12 @@ import { Scale, Milestone, Activity } from "lucide-react";
 
 interface GrowthChartProps {
   entries: GrowthEntry[];
-  onAddEntry: (weight: number, height: number, headCirc?: number, notes?: string) => void;
+  onAddEntry: (weight: number, height: number, headCirc?: number, notes?: string, customDate?: string) => void;
   onDeleteEntry: (id: string) => void;
+  birthDate?: string;
 }
 
-export default function GrowthChart({ entries, onAddEntry, onDeleteEntry }: GrowthChartProps) {
+export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthDate }: GrowthChartProps) {
   const [activeTab, setActiveTab] = useState<"weight" | "height" | "head">("weight");
   const [weight, setWeight] = useState("");
   const [height, setHeight] = useState("");
@@ -48,7 +49,7 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry }: Grow
       return;
     }
 
-    onAddEntry(wNum, hNum, hcNum, notes);
+    onAddEntry(wNum, hNum, hcNum, notes, date);
     setWeight("");
     setHeight("");
     setHeadCirc("");
@@ -56,17 +57,51 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry }: Grow
     setIsAdding(false);
   };
 
-  // Prepare data for Recharts
-  const chartData = sortedEntries.map(entry => ({
-    date: new Date(entry.date).toLocaleDateString("es-ES", {
-      month: "short",
-      day: "numeric"
-    }),
-    peso: entry.weight,
-    altura: entry.height,
-    perimetroCefalico: entry.headCircumference || 0,
-    Notas: entry.notes || ""
-  }));
+  // Prepare data for Recharts including WHO standard growth percentiles
+  const chartData = sortedEntries.map(entry => {
+    const entryTime = new Date(entry.date).getTime();
+    const birthTime = birthDate ? new Date(birthDate).getTime() : entryTime;
+    const ageMonths = Math.max(0, (entryTime - birthTime) / (1000 * 60 * 60 * 24 * 30.4375));
+
+    // Dynamic standard formula fits (WHO-based)
+    // Weight P50 is approx: 3.3 + 0.95 * ageMonths - 0.038 * ageMonths^2 + 0.00065 * ageMonths^3
+    const wRef = 3.3 + 0.95 * ageMonths - 0.038 * Math.pow(ageMonths, 2) + 0.00065 * Math.pow(ageMonths, 3);
+    const weightP15 = parseFloat((wRef * 0.84).toFixed(2));
+    const weightP50 = parseFloat(wRef.toFixed(2));
+    const weightP85 = parseFloat((wRef * 1.16).toFixed(2));
+
+    // Height P50 is approx: 50 + 3.0 * ageMonths - 0.11 * ageMonths^2 + 0.0018 * ageMonths^3
+    const hRef = 50 + 3.0 * ageMonths - 0.11 * Math.pow(ageMonths, 2) + 0.0018 * Math.pow(ageMonths, 3);
+    const heightP15 = parseFloat((hRef * 0.965).toFixed(1));
+    const heightP50 = parseFloat(hRef.toFixed(1));
+    const heightP85 = parseFloat((hRef * 1.035).toFixed(1));
+
+    // Head P50 is approx: 34.5 + 1.4 * ageMonths - 0.065 * ageMonths^2 + 0.0011 * ageMonths^3
+    const hcRef = 34.5 + 1.4 * ageMonths - 0.065 * Math.pow(ageMonths, 2) + 0.0011 * Math.pow(ageMonths, 3);
+    const headP15 = parseFloat((hcRef * 0.96).toFixed(1));
+    const headP50 = parseFloat(hcRef.toFixed(1));
+    const headP85 = parseFloat((hcRef * 1.04).toFixed(1));
+
+    return {
+      date: new Date(entry.date).toLocaleDateString("es-ES", {
+        month: "short",
+        day: "numeric"
+      }),
+      peso: entry.weight,
+      altura: entry.height,
+      perimetroCefalico: entry.headCircumference || 0,
+      Notas: entry.notes || "",
+      weightP15,
+      weightP50,
+      weightP85,
+      heightP15,
+      heightP50,
+      heightP85,
+      headP15,
+      headP50,
+      headP85
+    };
+  });
 
   return (
     <div className="space-y-6 text-xs">
@@ -220,34 +255,121 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry }: Grow
                 />
                 <Legend iconType="circle" />
                 {activeTab === "weight" && (
-                  <Line
-                    type="monotone"
-                    dataKey="peso"
-                    name="Peso Actual (kg)"
-                    stroke="#ec4899"
-                    strokeWidth={3}
-                    activeDot={{ r: 8 }}
-                  />
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="weightP15"
+                      name="Límite Bajo (P15) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="weightP50"
+                      name="Promedio Óptimo (P50)"
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="weightP85"
+                      name="Límite Alto (P85) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="peso"
+                      name="Peso Actual del Bebé (kg)"
+                      stroke="#db2777"
+                      strokeWidth={4}
+                      activeDot={{ r: 8 }}
+                    />
+                  </>
                 )}
                 {activeTab === "height" && (
-                  <Line
-                    type="monotone"
-                    dataKey="altura"
-                    name="Altura (cm)"
-                    stroke="#0ea5e9"
-                    strokeWidth={3}
-                    activeDot={{ r: 8 }}
-                  />
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="heightP15"
+                      name="Límite Bajo (P15) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="heightP50"
+                      name="Promedio Óptimo (P50)"
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="heightP85"
+                      name="Límite Alto (P85) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="altura"
+                      name="Altura del Bebé (cm)"
+                      stroke="#0284c7"
+                      strokeWidth={4}
+                      activeDot={{ r: 8 }}
+                    />
+                  </>
                 )}
                 {activeTab === "head" && (
-                  <Line
-                    type="monotone"
-                    dataKey="perimetroCefalico"
-                    name="P. Cefálico (cm)"
-                    stroke="#a855f7"
-                    strokeWidth={3}
-                    activeDot={{ r: 8 }}
-                  />
+                  <>
+                    <Line
+                      type="monotone"
+                      dataKey="headP15"
+                      name="Límite Bajo (P15) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="headP50"
+                      name="Promedio Óptimo (P50)"
+                      stroke="#10b981"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="headP85"
+                      name="Límite Alto (P85) - Carnet"
+                      stroke="#f43f5e"
+                      strokeWidth={1.5}
+                      strokeDasharray="4 4"
+                      dot={false}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="perimetroCefalico"
+                      name="P. Cefálico (cm)"
+                      stroke="#7c3aed"
+                      strokeWidth={4}
+                      activeDot={{ r: 8 }}
+                    />
+                  </>
                 )}
               </LineChart>
             </ResponsiveContainer>
@@ -259,6 +381,97 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry }: Grow
             <p className="text-xs text-slate-400 mt-1">Registra la primera medida de tu bebé para ver el gráfico.</p>
           </div>
         )}
+
+        {/* Dynamic Growth Health Status Evaluator */}
+        {sortedEntries.length > 0 && birthDate && (() => {
+          const lastEntry = sortedEntries[sortedEntries.length - 1];
+          const entryTime = new Date(lastEntry.date).getTime();
+          const birthTime = new Date(birthDate).getTime();
+          const ageMonths = Math.max(0, (entryTime - birthTime) / (1000 * 60 * 60 * 24 * 30.4375));
+
+          let statusText = "";
+          let statusColorClass = "";
+          let statusAdvice = "";
+          let valueText = "";
+
+          if (activeTab === "weight") {
+            const wRef = 3.3 + 0.95 * ageMonths - 0.038 * Math.pow(ageMonths, 2) + 0.00065 * Math.pow(ageMonths, 3);
+            const p15 = wRef * 0.84;
+            const p85 = wRef * 1.16;
+            const actual = lastEntry.weight;
+            valueText = `${actual} kg`;
+
+            if (actual < p15) {
+              statusText = "Rango de Peso: Por debajo del rango óptimo";
+              statusColorClass = "text-rose-600 bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900";
+              statusAdvice = "El peso actual de tu bebé está por debajo de las curvas estándar de vacunación. Asegúrate de ofrecer tomas a demanda y porciones densas en nutrientes y grasas saludables (como aguacate, aceites vegetales crudos o yema de huevo). Consulta siempre con tu pediatra de confianza.";
+            } else if (actual > p85) {
+              statusText = "Rango de Peso: Por encima del promedio saludable";
+              statusColorClass = "text-amber-700 bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900";
+              statusAdvice = "El peso actual supera el percentil 85. Esto suele ser normal en lactantes sanos alimentados con lactancia materna o alimentación complementaria activa. No obstante, evita añadir azúcares, jugos o alimentos ultraprocesados.";
+            } else {
+              statusText = "Rango de Peso: ¡Peso óptimo y saludable! ✨";
+              statusColorClass = "text-emerald-700 bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900";
+              statusAdvice = "¡Felicidades! Tu bebé se encuentra exactamente dentro de su carril de crecimiento ideal. Su desarrollo de peso es óptimo y armónico.";
+            }
+          } else if (activeTab === "height") {
+            const hRef = 50 + 3.0 * ageMonths - 0.11 * Math.pow(ageMonths, 2) + 0.0018 * Math.pow(ageMonths, 3);
+            const p15 = hRef * 0.965;
+            const p85 = hRef * 1.035;
+            const actual = lastEntry.height;
+            valueText = `${actual} cm`;
+
+            if (actual < p15) {
+              statusText = "Rango de Talla: Por debajo del promedio";
+              statusColorClass = "text-rose-600 bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900";
+              statusAdvice = "La altura de tu bebé está un poco por debajo del promedio. El crecimiento suele darse de forma escalonada, así que vigila su evolución en los controles de niño sano.";
+            } else if (actual > p85) {
+              statusText = "Rango de Talla: Por encima del promedio (Estatura alta)";
+              statusColorClass = "text-sky-700 bg-sky-50/60 dark:bg-sky-950/20 border-sky-200 dark:border-sky-900";
+              statusAdvice = "Tu bebé muestra una estatura alta ideal. Es un indicativo de excelente absorción de nutrientes, calcio, proteínas y factores genéticos.";
+            } else {
+              statusText = "Rango de Talla: ¡Talla óptima y saludable! 📏✨";
+              statusColorClass = "text-emerald-700 bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900";
+              statusAdvice = "¡Excelente! La estatura de tu bebé se sitúa exactamente en los valores centrales del carnet médico, reflejando una excelente nutrición diaria.";
+            }
+          } else {
+            const hcRef = 34.5 + 1.4 * ageMonths - 0.065 * Math.pow(ageMonths, 2) + 0.0011 * Math.pow(ageMonths, 3);
+            const p15 = hcRef * 0.96;
+            const p85 = hcRef * 1.04;
+            const actual = lastEntry.headCircumference || 0;
+            valueText = actual ? `${actual} cm` : "No registrado";
+            
+            if (!actual) {
+              statusText = "Sin registro reciente";
+              statusColorClass = "text-slate-500 bg-slate-50 dark:bg-slate-800 border-slate-200";
+              statusAdvice = "Registra el perímetro de la cabecita de tu bebé para poder evaluar su crecimiento craneal.";
+            } else if (actual < p15) {
+              statusText = "Perímetro Cefálico: Por debajo de la media estándar";
+              statusColorClass = "text-rose-600 bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900";
+              statusAdvice = "El perímetro craneal es ligeramente menor al percentil estándar. Sigue midiendo periódicamente junto a tu pediatra.";
+            } else if (actual > p85) {
+              statusText = "Perímetro Cefálico: Por encima de la media estándar";
+              statusColorClass = "text-amber-700 bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900";
+              statusAdvice = "El perímetro cefálico está en el límite superior, algo común que debe ser monitorizado de forma rutinaria.";
+            } else {
+              statusText = "Perímetro Cefálico: ¡Desarrollo cefálico perfecto! 🧠✨";
+              statusColorClass = "text-emerald-700 bg-emerald-50/60 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-900";
+              statusAdvice = "¡Estupendo! La cabecita del bebé crece a un ritmo constante y óptimo.";
+            }
+          }
+
+          return (
+            <div className={`mt-4 p-4 rounded-xl border text-xs ${statusColorClass} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+              <div className="flex justify-between items-center mb-1">
+                <span className="font-bold">{statusText}</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold px-2 py-0.5 bg-white/60 dark:bg-black/20 rounded">
+                  Último registro: {valueText}
+                </span>
+              </div>
+              <p className="leading-relaxed text-slate-600 dark:text-slate-300 font-medium">{statusAdvice}</p>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Historic Table */}
