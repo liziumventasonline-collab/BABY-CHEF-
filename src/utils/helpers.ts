@@ -61,9 +61,7 @@ export function getSafeRecipesForAge(recipes: Recipe[], months: number): Recipe[
  * Balances vegetables, fruits, and proteins across meals.
  */
 export function generateBalancedWeeklyMenu(recipes: Recipe[], babyAgeMonths: number): MealPlan {
-  const safeRecipes = getSafeRecipesForAge(recipes, babyAgeMonths);
   const plan: MealPlan = {};
-
   const daysOfWeek = [
     "Lunes",
     "Martes",
@@ -74,38 +72,217 @@ export function generateBalancedWeeklyMenu(recipes: Recipe[], babyAgeMonths: num
     "Domingo"
   ];
 
-  // Group recipes by category
-  const breakfasts = safeRecipes.filter(r => r.category === "desayuno" || r.attributes.includes("sin huevo"));
-  const snacks = safeRecipes.filter(r => r.category === "merienda" || r.attributes.includes("sin sal"));
-  const lunches = safeRecipes.filter(r => r.category === "almuerzo");
-  const dinners = safeRecipes.filter(r => r.category === "cena" || r.category === "almuerzo");
+  // Brackets:
+  // 1. Lactancia exclusiva (0 a 5 meses)
+  if (babyAgeMonths < 6) {
+    daysOfWeek.forEach(day => {
+      plan[day] = {
+        breakfast: { recipeId: null },
+        morningSnack: { recipeId: null },
+        lunch: { recipeId: null },
+        afternoonSnack: { recipeId: null },
+        dinner: { recipeId: null }
+      };
+    });
+    return plan;
+  }
 
-  const getFallbackOrRandom = (list: Recipe[], index: number, lastUsedId?: string | null): string | null => {
-    if (list.length === 0) return null;
-    const available = list.filter(r => r.id !== lastUsedId);
-    const source = available.length > 0 ? available : list;
-    return source[(index + Math.floor(Math.random() * source.length)) % source.length].id;
+  // 2. Complementaria Inicial (6 a 8 meses)
+  if (babyAgeMonths >= 6 && babyAgeMonths < 9) {
+    const stageMenu: { [day: string]: { [slot: string]: string | null } } = {
+      "Lunes": {
+        breakfast: "r_papilla_platano_cremoso",
+        morningSnack: null,
+        lunch: "r_pure_calabaza_vapor",
+        afternoonSnack: "r_papilla_camote_calabacin",
+        dinner: "r_papilla_pera_avena"
+      },
+      "Martes": {
+        breakfast: "r_papilla_pera_avena",
+        morningSnack: null,
+        lunch: "r_pure_zanahoria_lentejas",
+        afternoonSnack: null,
+        dinner: "r_pure_calabaza_vapor"
+      },
+      "Miércoles": {
+        breakfast: "r_papilla_platano_cremoso",
+        morningSnack: null,
+        lunch: "r_papilla_camote_calabacin",
+        afternoonSnack: null,
+        dinner: "r_pure_zanahoria_lentejas"
+      },
+      "Jueves": {
+        breakfast: "r_papilla_pera_avena",
+        morningSnack: null,
+        lunch: "r_pure_calabaza_vapor",
+        afternoonSnack: null,
+        dinner: "r_papilla_camote_calabacin"
+      },
+      "Viernes": {
+        breakfast: "r_papilla_platano_cremoso",
+        morningSnack: null,
+        lunch: "r_pure_zanahoria_lentejas",
+        afternoonSnack: null,
+        dinner: "r_pure_calabaza_vapor"
+      },
+      "Sábado": {
+        breakfast: "r_papilla_pera_avena",
+        morningSnack: null,
+        lunch: "r_papilla_camote_calabacin",
+        afternoonSnack: null,
+        dinner: "r_pure_zanahoria_lentejas"
+      },
+      "Domingo": {
+        breakfast: "r_papilla_platano_cremoso",
+        morningSnack: null,
+        lunch: "r_pure_calabaza_vapor",
+        afternoonSnack: null,
+        dinner: "r_papilla_pera_avena"
+      }
+    };
+
+    daysOfWeek.forEach(day => {
+      const menu = stageMenu[day];
+      plan[day] = {
+        breakfast: { recipeId: menu.breakfast },
+        morningSnack: { recipeId: menu.morningSnack },
+        lunch: { recipeId: menu.lunch },
+        afternoonSnack: { recipeId: menu.afternoonSnack },
+        dinner: { recipeId: menu.dinner }
+      };
+    });
+    return plan;
+  }
+
+  // 3. Alimentación de Transición (9 a 11 meses)
+  if (babyAgeMonths >= 9 && babyAgeMonths < 12) {
+    const stageMenu: { [day: string]: { [slot: string]: string | null } } = {
+      "Lunes": {
+        breakfast: "r_avena_manzana",
+        morningSnack: "r_bastones_camote",
+        lunch: "r_arroz_pollo_zanahoria",
+        afternoonSnack: "r_bolitas_platano_avena",
+        dinner: "r_crema_calabacin"
+      },
+      "Martes": {
+        breakfast: "r_tortilla_espinaca",
+        morningSnack: "r_bolitas_platano_avena",
+        lunch: "r_pescado_camote",
+        afternoonSnack: "r_bastones_camote",
+        dinner: "r_lentejas_calabacin"
+      },
+      "Miércoles": {
+        breakfast: "r_pan_aguacate_machacado",
+        morningSnack: "r_bastones_camote",
+        lunch: "r_arroz_pollo_zanahoria",
+        afternoonSnack: "r_bolitas_platano_avena",
+        dinner: "r_crema_calabacin"
+      },
+      "Jueves": {
+        breakfast: "r_mini_pancakes_platano_avena",
+        morningSnack: "r_bolitas_platano_avena",
+        lunch: "r_pescado_camote",
+        afternoonSnack: "r_bastones_camote",
+        dinner: "r_lentejas_calabacin"
+      },
+      "Viernes": {
+        breakfast: "r_avena_manzana",
+        morningSnack: "r_bastones_camote",
+        lunch: "r_arroz_pollo_zanahoria",
+        afternoonSnack: "r_bolitas_platano_avena",
+        dinner: "r_crema_calabacin"
+      },
+      "Sábado": {
+        breakfast: "r_tortilla_espinaca",
+        morningSnack: "r_bolitas_platano_avena",
+        lunch: "r_pescado_camote",
+        afternoonSnack: "r_bastones_camote",
+        dinner: "r_lentejas_calabacin"
+      },
+      "Domingo": {
+        breakfast: "r_pan_aguacate_machacado",
+        morningSnack: "r_bastones_camote",
+        lunch: "r_arroz_pollo_zanahoria",
+        afternoonSnack: "r_bolitas_platano_avena",
+        dinner: "r_crema_calabacin"
+      }
+    };
+
+    daysOfWeek.forEach(day => {
+      const menu = stageMenu[day];
+      plan[day] = {
+        breakfast: { recipeId: menu.breakfast },
+        morningSnack: { recipeId: menu.morningSnack },
+        lunch: { recipeId: menu.lunch },
+        afternoonSnack: { recipeId: menu.afternoonSnack },
+        dinner: { recipeId: menu.dinner }
+      };
+    });
+    return plan;
+  }
+
+  // 4. Mayor a 1 año (12 a 24 meses+ / Lonchera y Sólidos)
+  // Maps exactly to Page 3 ("Tabla Alimentación Semanal")
+  const stageMenu: { [day: string]: { [slot: string]: string | null } } = {
+    "Lunes": {
+      breakfast: "r_tortitas_avena_arandanos",
+      morningSnack: "r_palitos_pepino_zanahoria",
+      lunch: "r_arroz_integral_pollo_brocoli",
+      afternoonSnack: "r_palitos_pepino_zanahoria",
+      dinner: "r_espaguetis_tomate_queso"
+    },
+    "Martes": {
+      breakfast: "r_mini_pancakes_manzana",
+      morningSnack: "r_mini_muffins_frutos_rojos",
+      lunch: "r_estofado_ternera",
+      afternoonSnack: "r_mini_muffins_frutos_rojos",
+      dinner: "r_pure_calabaza_garbanzos"
+    },
+    "Miércoles": {
+      breakfast: "r_mini_muffins_frutos_rojos",
+      morningSnack: "r_palitos_pepino_zanahoria",
+      lunch: "r_filetitos_pescado_patata",
+      afternoonSnack: "r_palitos_pepino_zanahoria",
+      dinner: "r_croquetas_brocoli_queso"
+    },
+    "Jueves": {
+      breakfast: "r_tortitas_avena_arandanos",
+      morningSnack: "r_palitos_pepino_zanahoria",
+      lunch: "r_mini_albondigas_pollo",
+      afternoonSnack: "r_palitos_pepino_zanahoria",
+      dinner: "r_tortilla_patata_espinacas"
+    },
+    "Viernes": {
+      breakfast: "r_pan_aguacate_queso",
+      morningSnack: "r_chips_camote",
+      lunch: "r_estofado_ternera",
+      afternoonSnack: "r_chips_camote",
+      dinner: "r_arroz_integral_pollo_brocoli"
+    },
+    "Sábado": {
+      breakfast: "r_mini_pancakes_manzana",
+      morningSnack: "r_mini_muffins_frutos_rojos",
+      lunch: "r_empanaditas_pollo_espinaca",
+      afternoonSnack: "r_mini_muffins_frutos_rojos",
+      dinner: "r_pure_calabaza_garbanzos"
+    },
+    "Domingo": {
+      breakfast: "r_pan_hummus_pepino",
+      morningSnack: "r_bastones_zanahoria_dip",
+      lunch: "r_arroz_integral_pollo_brocoli",
+      afternoonSnack: "r_bastones_zanahoria_dip",
+      dinner: "r_mini_lasana_verduras"
+    }
   };
 
-  let lastLunchId: string | null = null;
-  let lastDinnerId: string | null = null;
-
-  daysOfWeek.forEach((day, index) => {
-    const breakfastId = getFallbackOrRandom(breakfasts, index);
-    const morningSnackId = getFallbackOrRandom(snacks, index);
-    const lunchId = getFallbackOrRandom(lunches, index, lastLunchId);
-    const afternoonSnackId = getFallbackOrRandom(snacks, index + 3);
-    const dinnerId = getFallbackOrRandom(dinners, index, lastDinnerId || lunchId);
-
-    lastLunchId = lunchId;
-    lastDinnerId = dinnerId;
-
+  daysOfWeek.forEach(day => {
+    const menu = stageMenu[day];
     plan[day] = {
-      breakfast: { recipeId: breakfastId },
-      morningSnack: { recipeId: morningSnackId },
-      lunch: { recipeId: lunchId },
-      afternoonSnack: { recipeId: afternoonSnackId },
-      dinner: { recipeId: dinnerId }
+      breakfast: { recipeId: menu.breakfast },
+      morningSnack: { recipeId: menu.morningSnack },
+      lunch: { recipeId: menu.lunch },
+      afternoonSnack: { recipeId: menu.afternoonSnack },
+      dinner: { recipeId: menu.dinner }
     };
   });
 

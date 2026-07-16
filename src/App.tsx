@@ -24,7 +24,6 @@ import {
   ThumbsUp,
   ThumbsDown,
   RotateCcw,
-  HelpCircle,
   Lightbulb,
   Sparkles,
   Share2,
@@ -37,12 +36,15 @@ import {
   CalendarDays,
   UtensilsCrossed,
   CheckCircle2,
-  Info
+  Info,
+  Camera,
+  Edit3,
+  Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 import { RECIPES_DB } from "./data/recipes";
-import { FAQ_DB, GUIDES_DB } from "./data/guides";
+import { GUIDES_DB } from "./data/guides";
 import {
   BabyProfile,
   Recipe,
@@ -88,6 +90,34 @@ const MOTIVATIONAL_QUOTES = [
   "Recuerda: la leche sigue siendo su alimento principal. ¡Disfruta la alimentación complementaria!",
   "La curiosidad es el mejor ingrediente. Deja que experimente con sus manitas."
 ];
+
+const getFeedingCategory = (months: number) => {
+  if (months < 6) {
+    return {
+      title: "🍼 Lactancia Exclusiva (0-5 meses)",
+      desc: "Lactancia materna exclusiva o fórmula infantil a demanda. No requiere sólidos todavía.",
+      color: "bg-pink-50 border-pink-100 text-pink-700 dark:bg-pink-950/20 dark:border-pink-900 dark:text-pink-300"
+    };
+  } else if (months >= 6 && months <= 8) {
+    return {
+      title: "🥣 Alimentación Complementaria Inicial (6-8 meses)",
+      desc: "Papillas suaves, purés y texturas semisólidas. Alimentos introducidos de 1 en 1 para comprobar tolerancia.",
+      color: "bg-teal-50 border-teal-100 text-teal-700 dark:bg-teal-950/20 dark:border-teal-900 dark:text-teal-300"
+    };
+  } else if (months >= 9 && months <= 11) {
+    return {
+      title: "🥑 Transición Alimentaria (9-11 meses)",
+      desc: "Alimentos picados finitos, texturas trituradas y sólidos blandos para incentivar la masticación.",
+      color: "bg-sky-50 border-sky-100 text-sky-700 dark:bg-sky-950/20 dark:border-sky-900 dark:text-sky-300"
+    };
+  } else {
+    return {
+      title: "🥪 Loncheras y Comida Familiar (12+ meses)",
+      desc: "Menú familiar saludable y loncheras nutritivas para preescolares. ¡Se han priorizado recetas de lonchera para sus meriendas!",
+      color: "bg-purple-50 border-purple-100 text-purple-700 dark:bg-purple-950/20 dark:border-purple-900 dark:text-purple-300"
+    };
+  }
+};
 
 export default function App() {
   // --- States ---
@@ -139,12 +169,18 @@ export default function App() {
   const [newShopItemName, setNewShopItemName] = useState("");
   const [newShopItemCat, setNewShopItemCat] = useState("Otros");
 
-  // AI Assistant chat states
-  const [chatMessages, setChatMessages] = useState<{ sender: "user" | "bot"; text: string }[]>([
-    { sender: "bot", text: "¡Hola, mamita o papito! 👶✨ Soy BabyChef AI, tu asesora de nutrición infantil. Puedo ayudarte con dudas sobre BLW, papillas, alérgenos, o buscar qué preparar con los ingredientes que tienes en casa (ej: plátano, avena). ¿Qué duda tienes hoy?" }
-  ]);
-  const [chatInput, setChatInput] = useState("");
-  const [isChatLoading, setIsChatLoading] = useState(false);
+  // Onboarding / First-time setup states
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(() => {
+    return localStorage.getItem("babychef_onboarded") !== "true";
+  });
+  const [onboardingPhotoUrl, setOnboardingPhotoUrl] = useState<string>("");
+  const [newBabyWeight, setNewBabyWeight] = useState("");
+  const [newBabyHeight, setNewBabyHeight] = useState("");
+  const [newBabyHeadCirc, setNewBabyHeadCirc] = useState("");
+
+  // PWA Install Prompt states
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
 
   // Profile Form states
   const [isAddingBaby, setIsAddingBaby] = useState(false);
@@ -170,7 +206,19 @@ export default function App() {
   // Random quote index
   const [quoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
 
-  // --- LocalStorage Synchronization ---
+  // --- LocalStorage Synchronization & Setup ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBtn(true);
+    };
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
   useEffect(() => {
     localStorage.setItem("babychef_babies", JSON.stringify(babies));
   }, [babies]);
@@ -247,6 +295,34 @@ export default function App() {
     setMealPlan(plan);
     const list = generateShoppingListFromMenu(plan, RECIPES_DB);
     setShoppingList(list);
+  };
+
+  // Auto-generate or update weekly menu automatically whenever the active baby or their age changes
+  useEffect(() => {
+    if (activeBaby) {
+      const plan = generateBalancedWeeklyMenu(RECIPES_DB, babyAge.months);
+      setMealPlan(plan);
+      const list = generateShoppingListFromMenu(plan, RECIPES_DB);
+      setShoppingList(list);
+    }
+  }, [activeBabyId, activeBaby?.birthDate]);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === "accepted") {
+        console.log("User accepted PWA installation");
+      }
+      setDeferredPrompt(null);
+      setShowInstallBtn(false);
+    } else {
+      alert(
+        "📲 ¡Instala BabyChef en tu celular!\n\n" +
+        "• En Android/Chrome: Haz clic en los tres puntos de arriba y selecciona 'Instalar aplicación' o 'Agregar a la pantalla principal'.\n\n" +
+        "• En iOS/Safari: Haz clic en el botón 'Compartir' (el cuadrado con flecha hacia arriba) y selecciona 'Agregar al inicio'."
+      );
+    }
   };
 
   const handleAddShoppingItem = (e: FormEvent) => {
@@ -391,67 +467,57 @@ export default function App() {
     };
     reader.readAsDataURL(file);
   };
+  
+  const handleOnboardingPhotoChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  // --- AI Chat Assistant Handler ---
-  const handleSendChatMessage = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim() || isChatLoading) return;
-
-    const userMsg = chatInput.trim();
-    setChatInput("");
-    setChatMessages(prev => [...prev, { sender: "user", text: userMsg }]);
-    setIsChatLoading(true);
-
-    try {
-      const response = await fetch("/api/assistant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userMsg,
-          history: chatMessages,
-          babyContext: {
-            nombre: activeBaby?.name,
-            edadMeses: babyAge.months,
-            edadTexto: babyAge.text,
-            alergias: activeBaby?.allergies,
-            alimentosRestringidos: activeBaby?.restrictedFoods,
-            preferencias: activeBaby?.preferences,
-            observaciones: activeBaby?.observations
-          },
-          recipesContext: RECIPES_DB.map(r => ({
-            id: r.id,
-            nombre: r.name,
-            edadRecomendada: r.ageRange,
-            ingredientes: r.ingredients,
-            textura: r.texture,
-            categoria: r.category,
-            atributos: r.attributes
-          }))
-        })
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setChatMessages(prev => [...prev, { sender: "bot", text: data.text }]);
-      } else {
-        throw new Error(data.error || "Ocurrió un error en el servidor.");
-      }
-    } catch (error: any) {
-      console.error("Chat error:", error);
-      setChatMessages(prev => [
-        ...prev,
-        {
-          sender: "bot",
-          text: `🧸 Oh, hubo un pequeño problemita técnico al contactar al asistente. ${error.message || "Asegúrate de configurar GEMINI_API_KEY."}`
-        }
-      ]);
-    } finally {
-      setIsChatLoading(false);
-    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setOnboardingPhotoUrl(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const handleQuickPromptClick = (promptText: string) => {
-    setChatInput(promptText);
+  const handleOnboardingSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!newBabyName.trim() || !newBabyBirth || !newBabyWeight || !newBabyHeight) {
+      alert("Por favor rellena todos los campos obligatorios marcados con (*).");
+      return;
+    }
+
+    const babyId = `baby-${Date.now()}`;
+    const newBaby: BabyProfile = {
+      id: babyId,
+      name: newBabyName.trim(),
+      birthDate: newBabyBirth,
+      allergies: newBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
+      restrictedFoods: (newBabyRestrictions || "Sal, Azúcar, Miel").split(",").map(s => s.trim()).filter(Boolean),
+      preferences: newBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
+      observations: newBabyObs.trim(),
+      photoUrl: onboardingPhotoUrl || undefined,
+      photoColor: "bg-teal-100 text-teal-700"
+    };
+
+    // Replace babies list with the single onboarded baby profile so Mateo is deleted/reset
+    setBabies([newBaby]);
+    setActiveBabyId(babyId);
+
+    // Save initial growth entry
+    const entryDate = new Date().toISOString().split("T")[0];
+    const initialGrowth: GrowthEntry = {
+      id: `growth-${Date.now()}`,
+      date: entryDate,
+      weight: parseFloat(newBabyWeight),
+      height: parseFloat(newBabyHeight),
+      headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
+      notes: "Registro de alta inicial de bienvenida 🧸"
+    };
+    setGrowthEntries([initialGrowth]);
+
+    // Save onboarding state
+    localStorage.setItem("babychef_onboarded", "true");
+    setShowOnboarding(false);
   };
 
   // --- Sharing helper ---
@@ -527,8 +593,149 @@ export default function App() {
           </div>
         </div>
 
-        {/* Top Branding Header */}
-        <header className={`px-4 py-3 flex items-center justify-between border-b transition-colors flex-shrink-0 ${
+        {showOnboarding ? (
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
+            {/* Beautiful Custom Onboarding Form */}
+            <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
+              <div className="text-center space-y-2">
+                <div className="w-16 h-16 bg-pink-100 dark:bg-pink-950/60 rounded-3xl flex items-center justify-center text-4xl mx-auto shadow-md">
+                  👶
+                </div>
+                <h2 className="font-display font-extrabold text-xl text-slate-800 dark:text-white">¡Bienvenida, Mamita! 💕</h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">Registra los datos de tu bebé para que adaptemos automáticamente su alimentación a la edad óptima.</p>
+              </div>
+
+              {/* Baby Photo Picker */}
+              <div className="flex flex-col items-center justify-center gap-2">
+                <div className="relative group w-20 h-20 rounded-full bg-slate-100 dark:bg-slate-800 border-2 border-dashed border-pink-200 dark:border-slate-700 flex items-center justify-center text-slate-400 overflow-hidden shadow-xs">
+                  {onboardingPhotoUrl ? (
+                    <img src={onboardingPhotoUrl} alt="Preview" className="w-full h-full object-cover" />
+                  ) : (
+                    <Camera className="w-6 h-6 text-pink-400" />
+                  )}
+                  <label htmlFor="onboard-photo-input" className="absolute inset-0 bg-black/40 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                    Subir foto
+                  </label>
+                </div>
+                <input
+                  type="file"
+                  id="onboard-photo-input"
+                  accept="image/*"
+                  onChange={handleOnboardingPhotoChange}
+                  className="hidden"
+                />
+                <span className="text-[10px] text-slate-400">Foto del bebé (opcional)</span>
+              </div>
+
+              {/* Form fields */}
+              <div className="space-y-3.5">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Nombre del bebé *</label>
+                  <input
+                    type="text"
+                    required
+                    value={newBabyName}
+                    onChange={e => setNewBabyName(e.target.value)}
+                    placeholder="Ej: Sofía, Mateo, Lucas..."
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Fecha de Nacimiento *</label>
+                  <input
+                    type="date"
+                    required
+                    value={newBabyBirth}
+                    onChange={e => setNewBabyBirth(e.target.value)}
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                  />
+                </div>
+
+                {/* Growth entries row */}
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Peso (kg) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      placeholder="Ej: 7.2"
+                      value={newBabyWeight}
+                      onChange={e => setNewBabyWeight(e.target.value)}
+                      className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Talla (cm) *</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      required
+                      placeholder="Ej: 64"
+                      value={newBabyHeight}
+                      onChange={e => setNewBabyHeight(e.target.value)}
+                      className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">P. Cefálico (cm)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      placeholder="Ej: 41"
+                      value={newBabyHeadCirc}
+                      onChange={e => setNewBabyHeadCirc(e.target.value)}
+                      className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Additional profile values */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Alergias (Opcional, separadas por coma)</label>
+                  <input
+                    type="text"
+                    value={newBabyAllergies}
+                    onChange={e => setNewBabyAllergies(e.target.value)}
+                    placeholder="Ej: Huevo, Lácteos, Gluten..."
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Alimentos Restringidos (Estándar recomendado)</label>
+                  <input
+                    type="text"
+                    value={newBabyRestrictions || "Sal, Azúcar, Miel, Leche entera"}
+                    onChange={e => setNewBabyRestrictions(e.target.value)}
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white shadow-xs"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Observaciones o notas pediátricas</label>
+                  <textarea
+                    value={newBabyObs}
+                    onChange={e => setNewBabyObs(e.target.value)}
+                    placeholder="Ej: Recomendado iniciar con purés suaves..."
+                    className="w-full text-xs p-3 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 dark:focus:ring-pink-900 text-slate-800 dark:text-white h-16 resize-none shadow-xs"
+                  />
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-3.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-lg shadow-pink-500/20 transition-all transform hover:scale-102 flex items-center justify-center gap-1.5 cursor-pointer mt-4"
+              >
+                <span>Comenzar mi Aventura Culinaria 🧸✨</span>
+              </button>
+            </form>
+          </div>
+        ) : (
+          <>
+            {/* Top Branding Header */}
+            <header className={`px-4 py-3 flex items-center justify-between border-b transition-colors flex-shrink-0 ${
           isDarkMode 
             ? "bg-slate-900/95 border-slate-800" 
             : "bg-gradient-to-r from-pink-50/90 via-sky-50/90 to-teal-50/90 border-pink-100"
@@ -548,10 +755,20 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Pulsing Install Button */}
+            {showInstallBtn && (
+              <button
+                onClick={handleInstallClick}
+                className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold text-[10px] sm:text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 transition-all border border-emerald-400/30 animate-pulse flex-shrink-0"
+              >
+                <span>📲 Instalar App</span>
+              </button>
+            )}
+
             {/* Darkmode toggle */}
             <button
               onClick={() => setIsDarkMode(!isDarkMode)}
-              className={`p-2 rounded-xl border transition-all ${
+              className={`p-2 rounded-xl border transition-all flex-shrink-0 ${
                 isDarkMode ? "bg-slate-800 border-slate-700 text-amber-400" : "bg-white border-pink-100 text-pink-500 hover:bg-pink-50"
               }`}
             >
@@ -608,194 +825,238 @@ export default function App() {
               
               {/* --- VIEW: DASHBOARD --- */}
               {activeTab === "dashboard" && (
-                <div className="space-y-5">
-                  {/* Beautiful Header Card */}
-                  <div className={`p-5 rounded-3xl border transition-all flex items-center justify-between gap-4 ${
+                <div className="space-y-6">
+                  {/* Beautiful Header Greeting Card */}
+                  <div className={`p-5 rounded-3xl border transition-all flex flex-col sm:flex-row items-center justify-between gap-4 ${
                     isDarkMode 
                       ? "bg-slate-800 border-slate-700 shadow-xs" 
                       : "bg-gradient-to-br from-pink-50/80 via-sky-50/50 to-white border-pink-100/50 shadow-sm"
                   }`}>
-                    <div className="space-y-2 text-left flex-1">
+                    <div className="space-y-2 text-left flex-1 w-full">
                       <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-pink-100 dark:bg-pink-950/50 text-pink-700 dark:text-pink-300 rounded-full text-[10px] font-bold">
-                        <Sparkles className="w-3 h-3" />
+                        <Sparkles className="w-3 h-3 text-pink-500" />
                         <span>Consejo del día</span>
                       </div>
-                      <h2 className="font-display font-bold text-2xl sm:text-3xl text-slate-800 dark:text-white">
-                        ¡Hola, mamita de {activeBaby?.name}! 🍼
+                      <h2 className="font-display font-bold text-xl sm:text-2xl text-slate-800 dark:text-white">
+                        ¡Hola, mamita de {activeBaby?.name || "tu bebé"}! 🍼
                       </h2>
-                      <p className="text-slate-600 dark:text-slate-300 max-w-lg text-sm sm:text-base italic leading-relaxed">
+                      <p className="text-slate-600 dark:text-slate-300 text-xs sm:text-sm italic leading-relaxed">
                         &ldquo;{MOTIVATIONAL_QUOTES[quoteIndex]}&rdquo;
                       </p>
-                      <div className="pt-2 text-xs text-slate-500 font-medium">
+                      <div className="pt-1 text-xs text-slate-500 font-medium">
                         Tu bebé tiene actualmente <span className="text-emerald-600 dark:text-emerald-400 font-bold">{babyAge.text}</span>. Adaptamos las sugerencias de comida automáticamente.
                       </div>
                     </div>
-                    {/* Baby avatar illustration */}
-                    <div className="w-28 h-28 rounded-full bg-gradient-to-tr from-emerald-400 to-teal-300 flex items-center justify-center text-white text-4xl shadow-lg ring-4 ring-emerald-50 dark:ring-slate-700 flex-shrink-0 overflow-hidden">
+                    {/* Big Baby Photo Avatar with dynamic selection */}
+                    <div className="relative group w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-tr from-pink-300 via-sky-200 to-teal-200 flex items-center justify-center text-white shadow-lg ring-4 ring-pink-100 dark:ring-slate-700 flex-shrink-0 overflow-hidden">
                       {activeBaby?.photoUrl ? (
                         <img src={activeBaby.photoUrl} alt={activeBaby.name} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       ) : (
-                        "👶"
+                        <span className="text-3xl">👶</span>
                       )}
+                      
+                      {/* Subir foto overlay button */}
+                      <label htmlFor="dashboard-baby-photo" className="absolute inset-0 bg-black/45 flex flex-col items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer text-[9px] text-white font-bold gap-1 text-center px-1">
+                        <Camera className="w-4.5 h-4.5" />
+                        <span>Subir Foto</span>
+                      </label>
+                      <input
+                        type="file"
+                        id="dashboard-baby-photo"
+                        accept="image/*"
+                        onChange={handlePhotoChange}
+                        className="hidden"
+                      />
                     </div>
                   </div>
 
-                  {/* Quick access bento grid */}
-                  <h3 className="font-display font-semibold text-lg text-slate-800 dark:text-white mb-2">Accesos Rápidos</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    <button
-                      onClick={() => {
-                        setAgeFilter(babyAge.months >= 6 ? `${Math.min(12, babyAge.months)} meses` : "6 meses");
-                        setActiveTab("recipes");
-                      }}
-                      className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-center gap-2 hover:scale-102 transition-all group"
-                    >
-                      <div className="p-3 bg-teal-50 dark:bg-teal-950 text-teal-600 rounded-xl group-hover:bg-teal-500 group-hover:text-white transition-all">
-                        <Baby className="w-5 h-5" />
+                  {/* Presentación del Perfil del Bebé (Presentation Card) */}
+                  <div className={`p-5 rounded-3xl border transition-all ${
+                    isDarkMode 
+                      ? "bg-slate-800 border-slate-700 shadow-xs" 
+                      : "bg-white border-pink-100 shadow-sm"
+                  } space-y-4`}>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 border-slate-100 dark:border-slate-700 gap-3">
+                      <div>
+                        <h3 className="font-display font-bold text-md text-slate-800 dark:text-white flex items-center gap-1.5">
+                          <User className="w-4.5 h-4.5 text-pink-400" />
+                          Perfil de Alimentación de {activeBaby?.name}
+                        </h3>
+                        <p className="text-[10px] text-slate-500">Ficha de presentación y requerimientos especiales</p>
                       </div>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Recetas por Edad</span>
-                      <span className="text-[10px] text-slate-400">Filtrado automático</span>
-                    </button>
+                      
+                      {/* Photo Upload & Actions Header */}
+                      <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                        <label 
+                          htmlFor="dashboard-baby-photo-btn"
+                          className="px-2 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>Subir Foto</span>
+                        </label>
+                        <input
+                          type="file"
+                          id="dashboard-baby-photo-btn"
+                          accept="image/*"
+                          onChange={handlePhotoChange}
+                          className="hidden"
+                        />
 
-                    <button
-                      onClick={() => setActiveTab("ai-assistant")}
-                      className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-center gap-2 hover:scale-102 transition-all group"
-                    >
-                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 rounded-xl group-hover:bg-emerald-500 group-hover:text-white transition-all">
-                        <MessageSquare className="w-5 h-5" />
+                        <button
+                          onClick={() => {
+                            handleStartEditBaby();
+                            setActiveTab("profile");
+                          }}
+                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
+                        >
+                          <Edit3 className="w-3 h-3" />
+                          <span>Editar</span>
+                        </button>
+
+                        <button
+                          onClick={handleDeleteBaby}
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>Eliminar</span>
+                        </button>
                       </div>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Preguntar Asistente IA</span>
-                      <span className="text-[10px] text-slate-400">Gemini 3.5 Flash</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setAttributeFilter("sin gluten");
-                        setActiveTab("recipes");
-                      }}
-                      className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-center gap-2 hover:scale-102 transition-all group"
-                    >
-                      <div className="p-3 bg-amber-50 dark:bg-amber-950 text-amber-600 rounded-xl group-hover:bg-amber-500 group-hover:text-white transition-all">
-                        <Flame className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Menús Sin Alérgenos</span>
-                      <span className="text-[10px] text-slate-400">Sin Huevo o Gluten</span>
-                    </button>
-
-                    <button
-                      onClick={() => setActiveTab("meal-planner")}
-                      className="p-4 bg-white dark:bg-slate-800 rounded-2xl shadow-xs border border-slate-100 dark:border-slate-700 flex flex-col items-center justify-center text-center gap-2 hover:scale-102 transition-all group"
-                    >
-                      <div className="p-3 bg-pink-50 dark:bg-pink-950 text-pink-600 rounded-xl group-hover:bg-pink-500 group-hover:text-white transition-all">
-                        <CalendarDays className="w-5 h-5" />
-                      </div>
-                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">Plan de la Semana</span>
-                      <span className="text-[10px] text-slate-400">Equilibrado y variado</span>
-                    </button>
-                  </div>
-
-                  {/* Recommendation block for active baby age */}
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center">
-                      <h3 className="font-display font-semibold text-md text-slate-800 dark:text-white flex items-center gap-2">
-                        <Lightbulb className="w-5 h-5 text-amber-400" />
-                        Recomendado para su edad ({babyAge.text})
-                      </h3>
-                      <button
-                        onClick={() => {
-                          setAgeFilter(babyAge.months >= 6 ? `${Math.min(12, babyAge.months)} meses` : "6 meses");
-                          setActiveTab("recipes");
-                        }}
-                        className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold hover:underline"
-                      >
-                        Ver todas
-                      </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {RECIPES_DB.filter(r => r.ageRange.includes(babyAge.months <= 7 ? "6 meses" : babyAge.months <= 9 ? "8 meses" : "12 meses"))
-                        .slice(0, 2)
-                        .map(recipe => (
-                          <div
-                            key={recipe.id}
-                            onClick={() => handleLogRecipeView(recipe.id)}
-                            className="p-4 rounded-xl bg-slate-50 dark:bg-slate-700/50 border border-slate-100 dark:border-slate-700 hover:border-emerald-200 dark:hover:border-emerald-800 transition-all cursor-pointer flex gap-4"
-                          >
-                            <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-950 text-emerald-600 text-2xl rounded-lg flex items-center justify-center flex-shrink-0">
-                              🥗
-                            </div>
-                            <div className="space-y-1">
-                              <h4 className="text-xs font-bold text-slate-800 dark:text-white line-clamp-1">
-                                {recipe.name}
-                              </h4>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                                <span>{recipe.texture}</span>
-                                <span>•</span>
-                                <span>{recipe.prepTime + recipe.cookTime} min</span>
-                              </div>
-                              <span className="inline-block text-[9px] bg-emerald-100/60 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full font-medium">
-                                {recipe.ageRange}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
+                    {/* Profile Stats Grid (Baby Card Details) */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 text-left space-y-0.5">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                          📅 Nacimiento
+                        </span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">
+                          {activeBaby?.birthDate ? new Date(activeBaby.birthDate).toLocaleDateString("es-ES", {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric"
+                          }) : "—"}
+                        </p>
+                      </div>
 
-                  {/* Active Baby mini-profile and allergens card */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
-                      <h3 className="font-display font-semibold text-md text-slate-800 dark:text-white">Alergias y Alimentos Restringidos</h3>
-                      <div className="space-y-2">
-                        <div className="flex flex-wrap gap-2">
-                          <span className="text-xs font-medium text-slate-500 w-full">Alérgenos de cuidado:</span>
-                          {activeBaby?.allergies.length > 0 ? (
+                      <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 text-left space-y-0.5">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                          ⚖️ Último Peso
+                        </span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">
+                          {growthEntries.length > 0 
+                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
+                            : "—"}
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 text-left space-y-0.5">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                          📏 Última Altura
+                        </span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">
+                          {growthEntries.length > 0 
+                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
+                            : "—"}
+                        </p>
+                      </div>
+
+                      <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 text-left space-y-0.5">
+                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                          🧠 Perím. Cefálico
+                        </span>
+                        <p className="text-xs font-bold text-slate-800 dark:text-white">
+                          {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
+                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
+                            : "—"}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Allergies and restricted items lists inside profile presentation */}
+                    <div className="space-y-2.5 pt-1">
+                      {/* Allergies row */}
+                      <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 text-left space-y-1">
+                        <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                          ⚠️ Alergias Registradas
+                        </h4>
+                        <div className="flex flex-wrap gap-1">
+                          {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
                             activeBaby.allergies.map(alg => (
-                              <span key={alg} className="text-xs bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-400 px-3 py-1 rounded-full font-bold">
+                              <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
                                 {alg}
                               </span>
                             ))
                           ) : (
-                            <span className="text-xs text-slate-400">Ninguno registrado.</span>
+                            <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
                           )}
                         </div>
-                        <div className="flex flex-wrap gap-2 pt-2">
-                          <span className="text-xs font-medium text-slate-500 w-full">Restringidos antes del año (Pediatría):</span>
-                          {activeBaby?.restrictedFoods.map(food => (
-                            <span key={food} className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400 px-3 py-1 rounded-full font-bold">
-                              {food}
-                            </span>
-                          ))}
+                      </div>
+
+                      {/* Restrictions row */}
+                      <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 text-left space-y-1">
+                        <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                          🚫 Alimentos Restringidos
+                        </h4>
+                        <div className="flex flex-wrap gap-1">
+                          {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
+                            activeBaby.restrictedFoods.map(food => (
+                              <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
+                                {food}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Ninguno restringido</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Preferences row */}
+                      <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/20 text-left space-y-1">
+                        <h4 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
+                          ⭐ Preferencias o Favoritos
+                        </h4>
+                        <div className="flex flex-wrap gap-1">
+                          {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
+                            activeBaby.preferences.map(pref => (
+                              <span key={pref} className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+                                {pref}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-400">Sin preferencias guardadas</span>
+                          )}
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
-                      <h3 className="font-display font-semibold text-md text-slate-800 dark:text-white">Últimas Guías Educativas</h3>
-                      <div className="space-y-3">
-                        {GUIDES_DB.slice(0, 2).map(article => (
-                          <div
-                            key={article.id}
-                            onClick={() => {
-                              setSelectedArticle(article);
-                              setActiveTab("guides");
-                            }}
-                            className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer transition-colors"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="p-2 bg-amber-50 dark:bg-amber-950 text-amber-500 rounded-lg">
-                                <BookOpen className="w-4 h-4" />
-                              </div>
-                              <div className="text-left">
-                                <p className="text-xs font-bold text-slate-800 dark:text-slate-200">{article.title}</p>
-                                <p className="text-[10px] text-slate-400 truncate w-48 sm:w-64">{article.summary}</p>
-                              </div>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-slate-400" />
-                          </div>
-                        ))}
+                    {/* Pediatric observations block */}
+                    {activeBaby?.observations && (
+                      <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800 text-left">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                          📝 Notas / Observaciones Especiales
+                        </span>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                          &ldquo;{activeBaby.observations}&rdquo;
+                        </p>
                       </div>
+                    )}
+                  </div>
+
+                  {/* Growth chart is displayed directly on the Dashboard main space! */}
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center px-1">
+                      <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">Curvas de Crecimiento Oficiales</h3>
+                      <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2 py-0.5 rounded-full font-bold">
+                        Carnet de Vacunación 📊
+                      </span>
                     </div>
+
+                    <GrowthChart
+                      entries={growthEntries}
+                      onAddEntry={handleAddGrowthEntry}
+                      onDeleteEntry={handleDeleteGrowthEntry}
+                      birthDate={activeBaby?.birthDate}
+                    />
                   </div>
                 </div>
               )}
@@ -1128,25 +1389,45 @@ export default function App() {
               {/* --- VIEW: MEAL PLANNER --- */}
               {activeTab === "meal-planner" && (
                 <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                      <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white">Planificador Semanal Inteligente</h2>
-                      <p className="text-xs text-slate-500">Genera de forma balanceada el menú del bebé utilizando únicamente las recetas seguras de la app</p>
-                    </div>
-                    <button
-                      onClick={handleGenerateWeeklyMenu}
-                      className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/10 flex items-center gap-2"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Generar Plan de Menú Semanal</span>
-                    </button>
+                  {/* Feeding Category Indicator Card */}
+                  {(() => {
+                    const category = getFeedingCategory(babyAge.months);
+                    return (
+                      <div className={`p-5 rounded-2xl border transition-all ${category.color} flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm`}>
+                        <div className="space-y-1.5 text-left flex-1">
+                          <h3 className="font-display font-bold text-sm sm:text-md flex items-center gap-2">
+                            <UtensilsCrossed className="w-4 h-4" />
+                            {category.title}
+                          </h3>
+                          <p className="text-xs opacity-90 leading-relaxed">
+                            {category.desc}
+                          </p>
+                          <div className="text-[10px] opacity-80 font-semibold">
+                            Alimentación recomendada adaptada automáticamente para <span className="underline">{activeBaby?.name}</span> ({babyAge.text}).
+                          </div>
+                        </div>
+                        <button
+                          onClick={handleGenerateWeeklyMenu}
+                          className="px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-emerald-500/10 flex items-center gap-1.5 self-stretch sm:self-auto justify-center cursor-pointer"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 animate-spin-reverse" />
+                          <span>Regenerar Menú</span>
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Header Title with explanatory context */}
+                  <div className="px-1 text-left space-y-1">
+                    <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white">Plan de Alimentación de esta Semana</h2>
+                    <p className="text-xs text-slate-400">Nutrición balanceada autogenerada para el desarrollo de tu bebé. Haz clic en cualquier plato para ver la receta detallada.</p>
                   </div>
 
                   {Object.keys(mealPlan).length > 0 ? (
                     <div className="space-y-4">
                       {Object.entries(mealPlan).map(([day, menu]) => (
                         <div key={day} className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs grid grid-cols-1 md:grid-cols-6 gap-4 items-center">
-                          <div className="col-span-1 border-r border-slate-100 dark:border-slate-700 pr-2">
+                          <div className="col-span-1 border-r border-slate-100 dark:border-slate-700 pr-2 text-left">
                             <span className="font-display font-bold text-sm text-slate-800 dark:text-white block">{day}</span>
                             <span className="text-[10px] text-slate-400 block">Menú diario</span>
                           </div>
@@ -1159,14 +1440,14 @@ export default function App() {
                               <div
                                 key={slotName}
                                 onClick={() => recipe && handleLogRecipeView(recipe.id)}
-                                className={`col-span-1 p-3 rounded-xl border transition-all cursor-pointer ${
+                                className={`col-span-1 p-3 rounded-xl border transition-all cursor-pointer text-left ${
                                   recipe
                                     ? "bg-emerald-50/20 hover:bg-emerald-50/50 border-emerald-100/50"
                                     : "bg-slate-50/50 border-slate-100"
                                 }`}
                               >
                                 <span className="text-[9px] uppercase tracking-wider text-slate-400 font-bold block mb-1">{label}</span>
-                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-1">
+                                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 line-clamp-2">
                                   {recipe ? recipe.name : "Leche materna / Libre demanda"}
                                 </span>
                               </div>
@@ -1623,130 +1904,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* --- VIEW: AI ASSISTANT --- */}
-              {activeTab === "ai-assistant" && (
-                <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div className="space-y-1">
-                      <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-emerald-500" /> Asistente de Alimentación de IA
-                      </h2>
-                      <p className="text-xs text-slate-500">Impulsado por Gemini. Responde con empatía y absoluto apego al recetario oficial de BabyChef.</p>
-                    </div>
-                    {activeBaby && (
-                      <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-400 px-3 py-1.5 rounded-lg font-bold">
-                        Perfil Activo: {activeBaby.name} ({babyAge.text})
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Chat interface */}
-                  <div className="bg-white dark:bg-slate-800 p-4 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-xs flex flex-col h-[500px]">
-                    
-                    {/* Chat messages box */}
-                    <div className="flex-1 overflow-y-auto space-y-4 p-2">
-                      {chatMessages.map((msg, idx) => {
-                        const isUser = msg.sender === "user";
-                        return (
-                          <div
-                            key={idx}
-                            className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                          >
-                            <div className={`p-4 rounded-2xl text-xs max-w-lg leading-relaxed ${
-                              isUser
-                                ? "bg-emerald-500 text-white rounded-tr-none shadow-xs"
-                                : "bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded-tl-none whitespace-pre-wrap border border-slate-100 dark:border-slate-600"
-                            }`}>
-                              {!isUser && <span className="block text-[9px] uppercase font-bold text-emerald-600 mb-1">BabyChef AI</span>}
-                              {msg.text}
-                            </div>
-                          </div>
-                        );
-                      })}
-                      {isChatLoading && (
-                        <div className="flex justify-start">
-                          <div className="p-4 bg-slate-100 dark:bg-slate-700 text-slate-500 rounded-2xl rounded-tl-none text-xs flex items-center gap-2">
-                            <span className="animate-bounce">🍼</span>
-                            <span>Escribiendo una deliciosa respuesta...</span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Quick prompting suggestions */}
-                    <div className="p-2 border-t border-slate-100 dark:border-slate-700 space-y-2">
-                      <span className="text-[10px] text-slate-400 font-medium">Sugerencias rápidas de consulta:</span>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          "¿Tengo plátano y avena, qué puedo hacer?",
-                          "¿Qué hago si mi bebé tiene arcadas?",
-                          "¿Cómo introduzco el huevo de forma segura?",
-                          "Alimentos estrictamente prohibidos antes de los 12m"
-                        ].map(suggestion => (
-                          <button
-                            key={suggestion}
-                            onClick={() => handleQuickPromptClick(suggestion)}
-                            className="px-2.5 py-1 bg-slate-50 dark:bg-slate-700 hover:bg-slate-100 text-slate-500 dark:text-slate-300 text-[10px] rounded-lg border transition-all text-left truncate max-w-[280px]"
-                          >
-                            {suggestion}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Chat Input form */}
-                    <form onSubmit={handleSendChatMessage} className="p-2 flex gap-2">
-                      <input
-                        type="text"
-                        value={chatInput}
-                        onChange={e => setChatInput(e.target.value)}
-                        placeholder="Pregúntame sobre BLW, recetas sanas o alimentos para tu bebé..."
-                        className="flex-1 text-xs p-3 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-white"
-                        disabled={isChatLoading}
-                      />
-                      <button
-                        type="submit"
-                        className="px-5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center"
-                        disabled={isChatLoading || !chatInput.trim()}
-                      >
-                        Enviar
-                      </button>
-                    </form>
-                  </div>
-                </div>
-              )}
-
-              {/* --- VIEW: FAQ --- */}
-              {activeTab === "faq" && (
-                <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs">
-                    <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white">Preguntas Frecuentes de Alimentación Infantil</h2>
-                    <p className="text-xs text-slate-500">Respuestas rápidas basadas en el recetario de expertos y pautas de la OMS para familias primerizas.</p>
-                  </div>
-
-                  <div className="space-y-4">
-                    {FAQ_DB.map(faq => (
-                      <div
-                        key={faq.id}
-                        className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs"
-                      >
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="text-[10px] bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-400 px-2.5 py-0.5 rounded-full font-bold">
-                            {faq.category}
-                          </span>
-                        </div>
-                        <h4 className="text-sm font-bold text-slate-800 dark:text-white mb-2">
-                          {faq.question}
-                        </h4>
-                        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                          {faq.answer}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* --- VIEW: STATISTICS --- */}
               {activeTab === "statistics" && (
                 <div className="space-y-6">
@@ -1840,6 +1997,9 @@ export default function App() {
           </AnimatePresence>
         </main>
 
+          </>
+        )}
+
         {/* Responsive Bottom Navigation Tab Bar (Sliding Pastel Pill Menu) */}
         <div className={`border-t px-3 py-3 select-none flex-shrink-0 transition-colors ${
           isDarkMode ? "bg-slate-950 border-slate-800" : "bg-gradient-to-r from-pink-50 via-sky-50 to-teal-50 border-pink-100"
@@ -1852,8 +2012,6 @@ export default function App() {
               { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
               { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
               { id: "profile", label: "Bebé", icon: User, color: "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-rose-200" },
-              { id: "ai-assistant", label: "Asistente IA", icon: MessageSquare, color: "bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border-emerald-200" },
-              { id: "faq", label: "Preguntas", icon: HelpCircle, color: "bg-violet-100 dark:bg-violet-950 text-violet-700 dark:text-violet-300 border-violet-200" },
               { id: "statistics", label: "Métricas", icon: BarChart2, color: "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200" }
             ].map(item => {
               const IconComponent = item.icon;

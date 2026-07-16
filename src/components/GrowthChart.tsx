@@ -259,36 +259,36 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
                     <Line
                       type="monotone"
                       dataKey="weightP15"
-                      name="Límite Bajo (P15) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Inferior (P15)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="weightP50"
                       name="Promedio Óptimo (P50)"
-                      stroke="#10b981"
+                      stroke="#22c55e"
                       strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      strokeDasharray="3 3"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="weightP85"
-                      name="Límite Alto (P85) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Superior (P85)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="peso"
-                      name="Peso Actual del Bebé (kg)"
-                      stroke="#db2777"
-                      strokeWidth={4}
+                      name="Peso de tu Bebé (kg)"
+                      stroke="#ec4899"
+                      strokeWidth={4.5}
                       activeDot={{ r: 8 }}
                     />
                   </>
@@ -298,36 +298,36 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
                     <Line
                       type="monotone"
                       dataKey="heightP15"
-                      name="Límite Bajo (P15) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Inferior (P15)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="heightP50"
                       name="Promedio Óptimo (P50)"
-                      stroke="#10b981"
+                      stroke="#22c55e"
                       strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      strokeDasharray="3 3"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="heightP85"
-                      name="Límite Alto (P85) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Superior (P85)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="altura"
-                      name="Altura del Bebé (cm)"
-                      stroke="#0284c7"
-                      strokeWidth={4}
+                      name="Altura de tu Bebé (cm)"
+                      stroke="#3b82f6"
+                      strokeWidth={4.5}
                       activeDot={{ r: 8 }}
                     />
                   </>
@@ -337,36 +337,36 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
                     <Line
                       type="monotone"
                       dataKey="headP15"
-                      name="Límite Bajo (P15) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Inferior (P15)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="headP50"
                       name="Promedio Óptimo (P50)"
-                      stroke="#10b981"
+                      stroke="#22c55e"
                       strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      strokeDasharray="3 3"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="headP85"
-                      name="Límite Alto (P85) - Carnet"
-                      stroke="#f43f5e"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
+                      name="Línea Roja Superior (P85)"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      strokeDasharray="5 5"
                       dot={false}
                     />
                     <Line
                       type="monotone"
                       dataKey="perimetroCefalico"
-                      name="P. Cefálico (cm)"
-                      stroke="#7c3aed"
-                      strokeWidth={4}
+                      name="P. Cefálico de tu Bebé (cm)"
+                      stroke="#8b5cf6"
+                      strokeWidth={4.5}
                       activeDot={{ r: 8 }}
                     />
                   </>
@@ -381,6 +381,17 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
             <p className="text-xs text-slate-400 mt-1">Registra la primera medida de tu bebé para ver el gráfico.</p>
           </div>
         )}
+
+        {/* Explicación de las Líneas Rojas (como en el Carnet de Vacunación) */}
+        <div className="mt-4 p-3.5 bg-red-50/60 dark:bg-red-950/20 border border-red-100 dark:border-red-900 rounded-xl text-left flex gap-2.5 items-start">
+          <span className="text-base select-none leading-none">📊</span>
+          <div className="space-y-1">
+            <span className="font-bold text-[11px] text-red-700 dark:text-red-400 block">Líneas Rojas de Control (Carnet de Vacunas)</span>
+            <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
+              Las <strong className="text-red-600 dark:text-red-400">Líneas Rojas (Límite Bajo y Límite Alto)</strong> representan los extremos de percentiles de la OMS. Si el punto de tu bebé se sitúa <strong className="text-emerald-600 dark:text-emerald-400">entre ambas líneas rojas</strong>, su crecimiento se encuentra en el rango <strong className="font-bold">Saludable y Óptimo</strong>.
+            </p>
+          </div>
+        </div>
 
         {/* Dynamic Growth Health Status Evaluator */}
         {sortedEntries.length > 0 && birthDate && (() => {

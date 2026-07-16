@@ -54,7 +54,7 @@ export interface Recipe {
   freezing: string;
   reheating: string;
   warnings: string[];
-  category: "desayuno" | "almuerzo" | "cena" | "merienda" | "acompañamiento";
+  category: "desayuno" | "almuerzo" | "cena" | "merienda" | "acompañamiento" | "lonchera";
   attributes: string[]; // e.g., ["rica en hierro", "rica en calcio", "rica en fibra", "sin huevo", "sin leche", "sin gluten", "sin azúcar"]
 }
 
