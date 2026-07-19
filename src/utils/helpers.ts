@@ -5,9 +5,21 @@
 
 import { Recipe, MealPlan, ShoppingItem, DailyMenu } from "../types";
 
+export function parseDateLocal(dateStr: string): Date {
+  if (!dateStr) return new Date();
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    return new Date(year, month, day);
+  }
+  return new Date(dateStr);
+}
+
 export function calculateAgeInMonths(birthDateStr: string): { months: number; days: number; text: string } {
   if (!birthDateStr) return { months: 0, days: 0, text: "0 meses" };
-  const birthDate = new Date(birthDateStr);
+  const birthDate = parseDateLocal(birthDateStr);
   const now = new Date();
 
   let years = now.getFullYear() - birthDate.getFullYear();
@@ -351,4 +363,52 @@ export function generateShoppingListFromMenu(menu: MealPlan, recipes: Recipe[]):
     checked: false,
     quantity: info.count > 1 ? `Para ${info.count} comidas` : undefined
   }));
+}
+
+/**
+ * Programmatically generates a unique, balanced weekly plan for a specific week number (1 to 24).
+ * Combines different recipes safe for the baby's current age.
+ */
+export function generateMenuForWeek(recipes: Recipe[], babyAgeMonths: number, weekNumber: number): MealPlan {
+  const safeRecipes = getSafeRecipesForAge(recipes, Math.max(6, babyAgeMonths));
+  const plan: MealPlan = {};
+  const daysOfWeek = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+
+  if (safeRecipes.length === 0) {
+    daysOfWeek.forEach(day => {
+      plan[day] = {
+        breakfast: { recipeId: null },
+        morningSnack: { recipeId: null },
+        lunch: { recipeId: null },
+        afternoonSnack: { recipeId: null },
+        dinner: { recipeId: null }
+      };
+    });
+    return plan;
+  }
+
+  // Filter recipes by category
+  const breakfasts = safeRecipes.filter(r => r.category === "desayuno" || r.category === "lonchera");
+  const lunches = safeRecipes.filter(r => r.category === "almuerzo" || r.category === "acompañamiento");
+  const dinners = safeRecipes.filter(r => r.category === "cena" || r.category === "almuerzo" || r.category === "acompañamiento");
+  const snacks = safeRecipes.filter(r => r.category === "merienda" || r.category === "lonchera" || r.category === "desayuno");
+
+  // Fallback defaults if categorized lists are empty
+  const getFromList = (list: Recipe[], offset: number, dayIdx: number) => {
+    const activeList = list.length > 0 ? list : safeRecipes;
+    const index = (weekNumber * 13 + dayIdx * 7 + offset) % activeList.length;
+    return activeList[index].id;
+  };
+
+  daysOfWeek.forEach((day, dayIdx) => {
+    plan[day] = {
+      breakfast: { recipeId: getFromList(breakfasts, 0, dayIdx) },
+      morningSnack: { recipeId: getFromList(snacks, 1, dayIdx) },
+      lunch: { recipeId: getFromList(lunches, 2, dayIdx) },
+      afternoonSnack: { recipeId: getFromList(snacks, 3, dayIdx) },
+      dinner: { recipeId: getFromList(dinners, 4, dayIdx) }
+    };
+  });
+
+  return plan;
 }

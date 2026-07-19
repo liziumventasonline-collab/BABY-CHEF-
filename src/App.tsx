@@ -39,12 +39,19 @@ import {
   Info,
   Camera,
   Edit3,
-  Trash2
+  Trash2,
+  Lock,
+  Key,
+  ShieldAlert,
+  RefreshCw,
+  Copy
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 import { RECIPES_DB } from "./data/recipes";
-import { GUIDES_DB } from "./data/guides";
+import { GUIDES_DB, FAQ_DB } from "./data/guides";
+import { WEEKLY_PLANNER_PDF } from "./data/planner_pdf_db";
+import { RECIPES_BY_AGE_PDF } from "./data/recipes_by_age_pdf";
 import {
   BabyProfile,
   Recipe,
@@ -52,12 +59,16 @@ import {
   MealPlan,
   ShoppingItem,
   GrowthEntry,
-  GuideArticle
+  GuideArticle,
+  WeeklyPdfPlan,
+  PdfRecipe
 } from "./types";
 import {
   calculateAgeInMonths,
   generateBalancedWeeklyMenu,
-  generateShoppingListFromMenu
+  generateShoppingListFromMenu,
+  generateMenuForWeek,
+  parseDateLocal
 } from "./utils/helpers";
 
 import GrowthChart from "./components/GrowthChart";
@@ -122,6 +133,40 @@ const getFeedingCategory = (months: number) => {
 export default function App() {
   // --- States ---
   const [activeTab, setActiveTab] = useState<string>("dashboard");
+
+  // Device Activation Lock States
+  const [deviceId] = useState<string>(() => {
+    let saved = localStorage.getItem("babychef_device_id");
+    if (!saved) {
+      saved = `dev_${Math.random().toString(36).substring(2)}${Date.now().toString(36)}`;
+      localStorage.setItem("babychef_device_id", saved);
+    }
+    return saved;
+  });
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null); // null = loading
+  const [isActivated, setIsActivated] = useState<boolean>(false);
+  const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<string>("");
+  const [showRecoveryCodeModal, setShowRecoveryCodeModal] = useState<boolean>(false);
+  const [recoveryInput, setRecoveryInput] = useState<string>("");
+  const [recoveryError, setRecoveryError] = useState<string>("");
+  const [recoverySuccess, setRecoverySuccess] = useState<boolean>(false);
+  const [isVerifyingDevice, setIsVerifyingDevice] = useState<boolean>(true);
+  const [activePdfWeek, setActivePdfWeek] = useState<number>(1);
+  const [pdfPlannerSubTab, setPdfPlannerSubTab] = useState<"plan" | "recetarios">("plan");
+  const [pdfBookAge, setPdfBookAge] = useState<"9-12" | "12-18" | "18-24">("9-12");
+  const [selectedPdfRecipe, setSelectedPdfRecipe] = useState<PdfRecipe | null>(null);
+  const [pdfShoppingChecked, setPdfShoppingChecked] = useState<{ [weekNum: number]: { [itemName: string]: boolean } }>(() => {
+    const saved = localStorage.getItem("babychef_pdf_shopping_checked");
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [guidesSubTab, setGuidesSubTab] = useState<"articles" | "faq">("articles");
+  const [activeDashboardSubTab, setActiveDashboardSubTab] = useState<string>("recetario");
+  const [weekProgressSelected, setWeekProgressSelected] = useState<number>(1);
+  const [weekShoppingChecked, setWeekShoppingChecked] = useState<{ [weekKey: string]: { [itemName: string]: boolean } }>(() => {
+    const saved = localStorage.getItem("babychef_week_shopping_checked");
+    return saved ? JSON.parse(saved) : {};
+  });
+  const [simulateSixMonths, setSimulateSixMonths] = useState<boolean>(false);
   const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
   const [babies, setBabies] = useState<BabyProfile[]>(() => {
     const saved = localStorage.getItem("babychef_babies");
@@ -208,6 +253,58 @@ export default function App() {
 
   // --- LocalStorage Synchronization & Setup ---
   useEffect(() => {
+    const checkDevice = async () => {
+      try {
+        const res = await fetch("/api/verify-device", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceId })
+        });
+        const data = await res.json();
+        setIsAuthorized(!!data.authorized);
+        setIsActivated(!!data.isActivated);
+      } catch (err) {
+        console.error("Error al verificar el dispositivo:", err);
+        // Si hay error de red, asumimos autorizado para que no quede inaccesible sin internet localmente
+        setIsAuthorized(true);
+      } finally {
+        setIsVerifyingDevice(false);
+      }
+    };
+    checkDevice();
+  }, [deviceId]);
+
+  const handleRecoverAccess = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!recoveryInput.trim()) return;
+    
+    setRecoveryError("");
+    setRecoverySuccess(false);
+
+    try {
+      const res = await fetch("/api/recover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recoveryKey: recoveryInput.trim(), newDeviceId: deviceId })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setRecoverySuccess(true);
+        setTimeout(() => {
+          setIsAuthorized(true);
+          setIsActivated(true);
+          setRecoveryInput("");
+          setRecoverySuccess(false);
+        }, 1500);
+      } else {
+        setRecoveryError(data.error || "Código incorrecto o inválido.");
+      }
+    } catch (err) {
+      setRecoveryError("Error de red. Asegúrate de estar conectado.");
+    }
+  };
+
+  useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
@@ -251,9 +348,18 @@ export default function App() {
     localStorage.setItem("babychef_growth_entries", JSON.stringify(growthEntries));
   }, [growthEntries]);
 
+  useEffect(() => {
+    localStorage.setItem("babychef_pdf_shopping_checked", JSON.stringify(pdfShoppingChecked));
+  }, [pdfShoppingChecked]);
+
+  useEffect(() => {
+    localStorage.setItem("babychef_week_shopping_checked", JSON.stringify(weekShoppingChecked));
+  }, [weekShoppingChecked]);
+
   // Active Baby context helper
   const activeBaby = babies.find(b => b.id === activeBabyId) || babies[0];
   const babyAge = calculateAgeInMonths(activeBaby?.birthDate);
+  const effectiveAgeMonths = simulateSixMonths ? Math.max(6, babyAge.months) : babyAge.months;
 
   // --- Functions ---
   const handleToggleFavorite = (recipeId: string) => {
@@ -291,7 +397,7 @@ export default function App() {
   };
 
   const handleGenerateWeeklyMenu = () => {
-    const plan = generateBalancedWeeklyMenu(RECIPES_DB, babyAge.months);
+    const plan = generateBalancedWeeklyMenu(RECIPES_DB, effectiveAgeMonths);
     setMealPlan(plan);
     const list = generateShoppingListFromMenu(plan, RECIPES_DB);
     setShoppingList(list);
@@ -300,12 +406,16 @@ export default function App() {
   // Auto-generate or update weekly menu automatically whenever the active baby or their age changes
   useEffect(() => {
     if (activeBaby) {
-      const plan = generateBalancedWeeklyMenu(RECIPES_DB, babyAge.months);
+      const plan = generateBalancedWeeklyMenu(RECIPES_DB, effectiveAgeMonths);
       setMealPlan(plan);
       const list = generateShoppingListFromMenu(plan, RECIPES_DB);
       setShoppingList(list);
+
+      // Reset search and age filters to avoid stuck states
+      setAgeFilter("todos");
+      setSearchQuery("");
     }
-  }, [activeBabyId, activeBaby?.birthDate]);
+  }, [activeBabyId, activeBaby?.birthDate, effectiveAgeMonths]);
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -479,45 +589,71 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  const handleOnboardingSubmit = (e: FormEvent) => {
+  const handleOnboardingSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!newBabyName.trim() || !newBabyBirth || !newBabyWeight || !newBabyHeight) {
       alert("Por favor rellena todos los campos obligatorios marcados con (*).");
       return;
     }
 
-    const babyId = `baby-${Date.now()}`;
-    const newBaby: BabyProfile = {
-      id: babyId,
-      name: newBabyName.trim(),
-      birthDate: newBabyBirth,
-      allergies: newBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
-      restrictedFoods: (newBabyRestrictions || "Sal, Azúcar, Miel").split(",").map(s => s.trim()).filter(Boolean),
-      preferences: newBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
-      observations: newBabyObs.trim(),
-      photoUrl: onboardingPhotoUrl || undefined,
-      photoColor: "bg-teal-100 text-teal-700"
-    };
+    try {
+      // Activar copia en el servidor para vincular este dispositivo
+      const actRes = await fetch("/api/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ deviceId })
+      });
+      
+      const actData = await actRes.json();
+      
+      if (!actRes.ok) {
+        alert(actData.error || "Esta copia de la aplicación ya ha sido activada en otro dispositivo.");
+        setIsAuthorized(false);
+        setIsActivated(true);
+        return;
+      }
 
-    // Replace babies list with the single onboarded baby profile so Mateo is deleted/reset
-    setBabies([newBaby]);
-    setActiveBabyId(babyId);
+      // Guardar el código de recuperación para mostrarlo en pantalla
+      setGeneratedRecoveryKey(actData.recoveryKey);
+      setShowRecoveryCodeModal(true);
 
-    // Save initial growth entry
-    const entryDate = new Date().toISOString().split("T")[0];
-    const initialGrowth: GrowthEntry = {
-      id: `growth-${Date.now()}`,
-      date: entryDate,
-      weight: parseFloat(newBabyWeight),
-      height: parseFloat(newBabyHeight),
-      headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
-      notes: "Registro de alta inicial de bienvenida 🧸"
-    };
-    setGrowthEntries([initialGrowth]);
+      const babyId = `baby-${Date.now()}`;
+      const newBaby: BabyProfile = {
+        id: babyId,
+        name: newBabyName.trim(),
+        birthDate: newBabyBirth,
+        allergies: newBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
+        restrictedFoods: (newBabyRestrictions || "Sal, Azúcar, Miel").split(",").map(s => s.trim()).filter(Boolean),
+        preferences: newBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
+        observations: newBabyObs.trim(),
+        photoUrl: onboardingPhotoUrl || undefined,
+        photoColor: "bg-teal-100 text-teal-700"
+      };
 
-    // Save onboarding state
-    localStorage.setItem("babychef_onboarded", "true");
-    setShowOnboarding(false);
+      // Reemplazar bebés con el perfil creado para limpiar Mateo por defecto
+      setBabies([newBaby]);
+      setActiveBabyId(babyId);
+
+      // Guardar registro de crecimiento inicial
+      const entryDate = new Date().toISOString().split("T")[0];
+      const initialGrowth: GrowthEntry = {
+        id: `growth-${Date.now()}`,
+        date: entryDate,
+        weight: parseFloat(newBabyWeight),
+        height: parseFloat(newBabyHeight),
+        headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
+        notes: "Registro de alta inicial de bienvenida 🧸"
+      };
+      setGrowthEntries([initialGrowth]);
+
+      // Guardar estado en localStorage
+      localStorage.setItem("babychef_onboarded", "true");
+      setIsAuthorized(true);
+      setIsActivated(true);
+    } catch (err) {
+      console.error("Error al activar copia:", err);
+      alert("Error de conexión al activar tu licencia de BabyChef. Por favor, asegúrate de estar conectado a internet.");
+    }
   };
 
   // --- Sharing helper ---
@@ -529,6 +665,19 @@ export default function App() {
       alert(`Compartir contenido:\n\n${title}\n\n${text}\n\nURL copiada al portapapeles.`);
       navigator.clipboard.writeText(`${title}\n${text}\n${window.location.href}`);
     }
+  };
+
+  // Helper to extract the minimum age in months from the recipe's ageRange string (e.g. "6 meses" -> 6, "12 meses" -> 12, "18 meses" -> 18, "2 años" -> 24)
+  const getRecipeMinAge = (ageRange: string): number => {
+    const numbers = ageRange.match(/\d+/);
+    if (numbers) {
+      const num = parseInt(numbers[0], 10);
+      if (ageRange.toLowerCase().includes("año") || ageRange.toLowerCase().includes("ano")) {
+        return num * 12;
+      }
+      return num;
+    }
+    return 6; // default minimum
   };
 
   // --- Filters on recipes ---
@@ -555,6 +704,93 @@ export default function App() {
   const mostLikedRecipeNames = Array.from(new Set(likedRecipes))
     .map(id => RECIPES_DB.find(r => r.id === id)?.name)
     .filter(Boolean);
+
+  if (isVerifyingDevice) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
+        <div className="text-center space-y-4">
+          <div className="text-6xl animate-bounce">👶</div>
+          <div className="flex items-center justify-center gap-2">
+            <RefreshCw className="w-5 h-5 text-pink-500 animate-spin" />
+            <span className="font-display font-bold text-sm text-slate-600">Iniciando BabyChef...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAuthorized === false) {
+    return (
+      <div className="min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
+        <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-6">
+          <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
+            <Lock className="w-10 h-10" />
+          </div>
+
+          <div className="space-y-2">
+            <h2 className="font-display font-extrabold text-2xl text-slate-800">
+              Aplicación Vinculada
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Esta copia de **BabyChef** ya se encuentra registrada y vinculada a otro dispositivo autorizado.
+            </p>
+          </div>
+
+          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
+            <p className="font-bold text-slate-700 flex items-center gap-1.5">
+              <ShieldAlert className="w-4 h-4 text-amber-500" />
+              ¿Por qué veo esto?
+            </p>
+            <p className="text-[11px] leading-relaxed text-slate-500">
+              Para garantizar el uso personal del recetario y evitar la distribución no autorizada de este enlace, la licencia se asocia automáticamente al primer dispositivo que inicia sesión.
+            </p>
+          </div>
+
+          <form onSubmit={handleRecoverAccess} className="space-y-3 pt-2 text-left">
+            <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-wider pl-1">
+              ¿Eres el dueño de esta licencia?
+            </label>
+            <p className="text-[10px] text-slate-400 -mt-2 pl-1">
+              Si borraste el caché de tu navegador o cambiaste de celular, ingresa tu Código de Recuperación original:
+            </p>
+            <div className="space-y-2">
+              <div className="relative flex items-center">
+                <Key className="absolute left-3 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="BABYCHEF-XXXX-XXXX-XXXX-XXXX"
+                  value={recoveryInput}
+                  onChange={e => setRecoveryInput(e.target.value)}
+                  className="w-full text-xs pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-pink-400 text-slate-800 font-mono"
+                  required
+                />
+              </div>
+              
+              {recoveryError && (
+                <p className="text-[11px] font-bold text-rose-500 pl-1">{recoveryError}</p>
+              )}
+              {recoverySuccess && (
+                <p className="text-[11px] font-bold text-emerald-600 pl-1">✓ ¡Código correcto! Vinculando nuevo dispositivo...</p>
+              )}
+
+              <button
+                type="submit"
+                className="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-500/10 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Verificar y Reactivar Acceso</span>
+              </button>
+            </div>
+          </form>
+
+          <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
+            ¿No tienes una licencia activa o eres el comprador?<br/>
+            Contacta al vendedor para adquirir tu copia original de BabyChef.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 relative overflow-hidden ${
@@ -593,7 +829,58 @@ export default function App() {
           </div>
         </div>
 
-        {showOnboarding ? (
+        {showRecoveryCodeModal ? (
+          <div className="flex-1 overflow-y-auto p-8 flex flex-col justify-center items-center bg-gradient-to-b from-teal-50 via-white to-pink-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-center space-y-6">
+            <div className="w-20 h-20 bg-teal-50 dark:bg-teal-950/40 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-teal-100 dark:border-teal-900 text-teal-500 shadow-sm">
+              🎉
+            </div>
+
+            <div className="space-y-2">
+              <h2 className="font-display font-extrabold text-2xl text-slate-800 dark:text-white">
+                ¡Registro Activado!
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Esta copia de **BabyChef** se ha bloqueado y vinculado a este dispositivo con éxito.
+              </p>
+            </div>
+
+            <div className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-center space-y-3 shadow-inner">
+              <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+                Código de Recuperación de Licencia
+              </p>
+              <div className="bg-white dark:bg-slate-950 px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-sm font-extrabold text-teal-600 dark:text-teal-400 tracking-wider flex items-center justify-between shadow-xs">
+                <span>{generatedRecoveryKey}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(generatedRecoveryKey);
+                    alert("✓ Código copiado al portapapeles.");
+                  }}
+                  className="p-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
+                  title="Copiar código"
+                >
+                  <Copy className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
+                **IMPORTANTE:** Guarda este código en un lugar seguro. Lo necesitarás si borras el historial de tu celular o si deseas abrir tu recetario en otro dispositivo.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText(generatedRecoveryKey);
+                setShowRecoveryCodeModal(false);
+                setShowOnboarding(false);
+              }}
+              className="w-full py-3.5 bg-teal-500 hover:bg-teal-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-teal-500/10 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Entendido, Copiar Código y Comenzar</span>
+            </button>
+          </div>
+        ) : showOnboarding ? (
           <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
             {/* Beautiful Custom Onboarding Form */}
             <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
@@ -870,200 +1157,647 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Presentación del Perfil del Bebé (Presentation Card) */}
-                  <div className={`p-5 rounded-3xl border transition-all ${
-                    isDarkMode 
-                      ? "bg-slate-800 border-slate-700 shadow-xs" 
-                      : "bg-white border-pink-100 shadow-sm"
-                  } space-y-4`}>
-                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 border-slate-100 dark:border-slate-700 gap-3">
-                      <div>
-                        <h3 className="font-display font-bold text-md text-slate-800 dark:text-white flex items-center gap-1.5">
-                          <User className="w-4.5 h-4.5 text-pink-400" />
-                          Perfil de Alimentación de {activeBaby?.name}
-                        </h3>
-                        <p className="text-[10px] text-slate-500">Ficha de presentación y requerimientos especiales</p>
+                  {/* Exclusive Breastfeeding Guidelines Alert (Under 6 months support) */}
+                  {babyAge.months < 6 && (
+                    <div className="bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-500/20 dark:border-emerald-500/30 p-4 rounded-2xl space-y-3 shadow-xs text-left">
+                      <div className="flex gap-3">
+                        <span className="text-3xl select-none">🍼</span>
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-400">Etapa de Lactancia Exclusiva para {activeBaby?.name}</h4>
+                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                            {activeBaby?.name} tiene actualmente <strong>{babyAge.text}</strong>. De acuerdo con la OMS, los bebés menores de 6 meses no deben consumir sólidos.
+                          </p>
+                        </div>
                       </div>
-                      
-                      {/* Photo Upload & Actions Header */}
-                      <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                        <label 
-                          htmlFor="dashboard-baby-photo-btn"
-                          className="px-2 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
-                        >
-                          <Camera className="w-3 h-3" />
-                          <span>Subir Foto</span>
-                        </label>
-                        <input
-                          type="file"
-                          id="dashboard-baby-photo-btn"
-                          accept="image/*"
-                          onChange={handlePhotoChange}
-                          className="hidden"
-                        />
-
+                      <div className="pt-2.5 flex flex-col sm:flex-row items-center justify-between border-t border-emerald-500/10 gap-2">
+                        <span className="text-[10px] text-slate-500 font-medium">¿Quieres planificar o explorar futuras recetas en advance?</span>
                         <button
-                          onClick={() => {
-                            handleStartEditBaby();
-                            setActiveTab("profile");
-                          }}
-                          className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
+                          onClick={() => setSimulateSixMonths(!simulateSixMonths)}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all border ${
+                            simulateSixMonths
+                              ? "bg-emerald-500 text-white border-emerald-400"
+                              : "bg-white dark:bg-slate-800 text-emerald-600 border-emerald-200 hover:bg-emerald-50"
+                          }`}
                         >
-                          <Edit3 className="w-3 h-3" />
-                          <span>Editar</span>
-                        </button>
-
-                        <button
-                          onClick={handleDeleteBaby}
-                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Eliminar</span>
+                          {simulateSixMonths ? "🔄 Desactivar Simulación" : "💡 Simular 6 Meses para ver recetas"}
                         </button>
                       </div>
                     </div>
+                  )}
 
-                    {/* Profile Stats Grid (Baby Card Details) */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 text-left space-y-0.5">
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                          📅 Nacimiento
-                        </span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-white">
-                          {activeBaby?.birthDate ? new Date(activeBaby.birthDate).toLocaleDateString("es-ES", {
-                            year: "numeric",
-                            month: "short",
-                            day: "numeric"
-                          }) : "—"}
-                        </p>
-                      </div>
-
-                      <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 text-left space-y-0.5">
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                          ⚖️ Último Peso
-                        </span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-white">
-                          {growthEntries.length > 0 
-                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
-                            : "—"}
-                        </p>
-                      </div>
-
-                      <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 text-left space-y-0.5">
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                          📏 Última Altura
-                        </span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-white">
-                          {growthEntries.length > 0 
-                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
-                            : "—"}
-                        </p>
-                      </div>
-
-                      <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 text-left space-y-0.5">
-                        <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                          🧠 Perím. Cefálico
-                        </span>
-                        <p className="text-xs font-bold text-slate-800 dark:text-white">
-                          {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
-                            ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
-                            : "—"}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Allergies and restricted items lists inside profile presentation */}
-                    <div className="space-y-2.5 pt-1">
-                      {/* Allergies row */}
-                      <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 text-left space-y-1">
-                        <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
-                          ⚠️ Alergias Registradas
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
-                            activeBaby.allergies.map(alg => (
-                              <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
-                                {alg}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Restrictions row */}
-                      <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 text-left space-y-1">
-                        <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
-                          🚫 Alimentos Restringidos
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
-                            activeBaby.restrictedFoods.map(food => (
-                              <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
-                                {food}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Ninguno restringido</span>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Preferences row */}
-                      <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/20 text-left space-y-1">
-                        <h4 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
-                          ⭐ Preferencias o Favoritos
-                        </h4>
-                        <div className="flex flex-wrap gap-1">
-                          {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
-                            activeBaby.preferences.map(pref => (
-                              <span key={pref} className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
-                                {pref}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="text-[10px] text-slate-400">Sin preferencias guardadas</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Pediatric observations block */}
-                    {activeBaby?.observations && (
-                      <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800 text-left">
-                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
-                          📝 Notas / Observaciones Especiales
-                        </span>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
-                          &ldquo;{activeBaby.observations}&rdquo;
-                        </p>
-                      </div>
-                    )}
+                  {/* Dynamic Dashboard Subtabs Navigation Selector */}
+                  <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-1.5 px-0.5 border-b border-slate-100 dark:border-slate-800 flex-shrink-0">
+                    {[
+                      { id: "recetario", label: "Recetario Seguro", icon: UtensilsCrossed, color: "text-emerald-500 bg-emerald-100/40 border-emerald-200 dark:bg-emerald-950/20" },
+                      { id: "plan-24-semanas", label: "Plan 24 Semanas", icon: CalendarDays, color: "text-sky-500 bg-sky-100/40 border-sky-200 dark:bg-sky-950/20" },
+                      { id: "desayunos", label: "Desayunos por Semanas", icon: Star, color: "text-pink-500 bg-pink-100/40 border-pink-200 dark:bg-pink-950/20" },
+                      { id: "crecimiento", label: "Ficha & Crecimiento", icon: BarChart2, color: "text-purple-500 bg-purple-100/40 border-purple-200 dark:bg-purple-950/20" }
+                    ].map(sub => {
+                      const Icon = sub.icon;
+                      const isSubActive = activeDashboardSubTab === sub.id;
+                      return (
+                        <button
+                          key={sub.id}
+                          onClick={() => setActiveDashboardSubTab(sub.id)}
+                          className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-xs font-bold transition-all flex-shrink-0 cursor-pointer border ${
+                            isSubActive
+                              ? `${sub.color} shadow-xs font-extrabold border-slate-200 dark:border-slate-700`
+                              : "bg-white/80 dark:bg-slate-800 border-transparent text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          <Icon className="w-4 h-4" />
+                          <span>{sub.label}</span>
+                        </button>
+                      );
+                    })}
                   </div>
 
-                  {/* Growth chart is displayed directly on the Dashboard main space! */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center px-1">
-                      <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">Curvas de Crecimiento Oficiales</h3>
-                      <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2 py-0.5 rounded-full font-bold">
-                        Carnet de Vacunación 📊
-                      </span>
-                    </div>
+                  {/* Subtab Contents Container */}
+                  <div className="space-y-5">
+                    
+                    {/* SUBTAB 1: RECETARIO SEGURO */}
+                    {activeDashboardSubTab === "recetario" && (
+                      <div className="space-y-4 text-left">
+                        {/* Search & Filter inside Dashboard */}
+                        <div className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-3">
+                          <div className="flex flex-col sm:flex-row gap-2.5">
+                            <div className="relative flex-1">
+                              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+                              <input
+                                type="text"
+                                placeholder="Buscar recetas aptas (ej. avena, puré)..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full text-xs pl-9 pr-8 py-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                              />
+                              {searchQuery && (
+                                <button onClick={() => setSearchQuery("")} className="absolute right-3 top-3 text-slate-400">
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                            <select
+                              value={attributeFilter}
+                              onChange={e => setAttributeFilter(e.target.value)}
+                              className="text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                            >
+                              <option value="todos">Todos los atributos</option>
+                              <option value="sin huevo">Sin Huevo</option>
+                              <option value="sin leche">Sin Leche</option>
+                              <option value="sin gluten">Sin Gluten</option>
+                              <option value="sin azúcar">Sin Azúcar</option>
+                              <option value="rica en hierro">Rica en Hierro</option>
+                            </select>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {["Papilla", "Puré", "BLW", "Avena", "Crema"].map(tag => (
+                              <button
+                                key={tag}
+                                onClick={() => setSearchQuery(tag)}
+                                className={`px-2.5 py-1 rounded-full text-[10px] font-semibold transition-all ${
+                                  searchQuery.toLowerCase() === tag.toLowerCase()
+                                    ? "bg-emerald-500 text-white"
+                                    : "bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-slate-200"
+                                }`}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                    <GrowthChart
-                      entries={growthEntries}
-                      onAddEntry={handleAddGrowthEntry}
-                      onDeleteEntry={handleDeleteGrowthEntry}
-                      birthDate={activeBaby?.birthDate}
-                    />
+                        {/* Lock / Safe Age Explanatory Note Box */}
+                        <div className="bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/40 p-4 rounded-2xl flex gap-3 text-left">
+                          <div className="text-xl">💡</div>
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-400">Recetario Completo Habilitado</h4>
+                            <p className="text-[10px] text-slate-500 leading-relaxed">
+                              ¡Hemos desbloqueado todas las recetas para que las explores libremente! Podrás ver preparaciones de todas las edades. Las recetas y texturas ideales recomendadas para los <strong>{simulateSixMonths ? "6 meses de simulación" : babyAge.text}</strong> de tu pequeño se destacarán de forma automática para asegurar un crecimiento y desarrollo digestivo perfecto.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Recipe Cards List */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {filteredRecipes.map(recipe => {
+                            const isFav = favorites.includes(recipe.id);
+                            return (
+                              <div
+                                key={recipe.id}
+                                className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden flex flex-col justify-between shadow-xs hover:shadow-md transition-all group"
+                              >
+                                <div className="p-4 space-y-3">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div className="space-y-0.5">
+                                      <span className="text-[9px] bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-md font-bold uppercase tracking-wider">
+                                        {recipe.ageRange}
+                                      </span>
+                                      <h4 className="text-sm font-bold text-slate-800 dark:text-white line-clamp-1">{recipe.name}</h4>
+                                    </div>
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleToggleFavorite(recipe.id); }}
+                                      className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded-full hover:text-rose-500 text-slate-400"
+                                    >
+                                      <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-rose-500 text-rose-500" : ""}`} />
+                                    </button>
+                                  </div>
+                                  <p className="text-xs text-slate-400 line-clamp-2">{recipe.steps[0]}</p>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-2 py-0.5 rounded-md">{recipe.texture}</span>
+                                    <span className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-500 px-2 py-0.5 rounded-md">{recipe.prepTime + recipe.cookTime} min</span>
+                                  </div>
+                                </div>
+                                <div className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700/60">
+                                  <button
+                                    onClick={() => handleLogRecipeView(recipe.id)}
+                                    className="w-full py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1"
+                                  >
+                                    <span>Ver Modo de Preparación</span>
+                                    <ChevronRight className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          {filteredRecipes.length === 0 && (
+                            <div className="col-span-full py-12 px-4 text-center bg-white dark:bg-slate-800 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl text-slate-400">
+                              <p className="text-xs font-semibold">No se encontraron recetas adecuadas para este filtro.</p>
+                              <p className="text-[10px] mt-1">Prueba limpiando la búsqueda o seleccionando otro atributo.</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUBTAB 2: PLAN PROGRESIVO DE 24 SEMANAS CON LISTA DE COMPRAS */}
+                    {activeDashboardSubTab === "plan-24-semanas" && (
+                      <div className="space-y-5 text-left">
+                        {/* Progressive Week Carousel (Weeks 1 to 24) */}
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Elige la Semana de Progreso (1 - 24):</label>
+                          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1 px-0.5">
+                            {Array.from({ length: 24 }, (_, i) => i + 1).map(weekNum => {
+                              const isSelected = weekProgressSelected === weekNum;
+                              return (
+                                <button
+                                  key={weekNum}
+                                  onClick={() => setWeekProgressSelected(weekNum)}
+                                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer border ${
+                                    isSelected
+                                      ? "bg-sky-500 border-sky-400 text-white shadow-xs font-extrabold"
+                                      : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-500 hover:bg-slate-100"
+                                  }`}
+                                >
+                                  Semana {weekNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        {/* Dynamic Weekly Menu Logic */}
+                        {(() => {
+                          const weeklyMenu = generateMenuForWeek(RECIPES_DB, effectiveAgeMonths, weekProgressSelected);
+                          const days = Object.keys(weeklyMenu);
+                          const shoppingListItems = generateShoppingListFromMenu(weeklyMenu, RECIPES_DB);
+                          const weekKey = `${activeBabyId}_w${weekProgressSelected}`;
+
+                          const handleToggleWeekShoppingCheck = (itemName: string) => {
+                            setWeekShoppingChecked(prev => {
+                              const currentWeekChecks = prev[weekKey] || {};
+                              const updatedWeekChecks = {
+                                ...currentWeekChecks,
+                                [itemName]: !currentWeekChecks[itemName]
+                              };
+                              return {
+                                ...prev,
+                                [weekKey]: updatedWeekChecks
+                              };
+                            });
+                          };
+
+                          return (
+                            <div className="space-y-5">
+                              {/* Descriptive Guidance Banner */}
+                              <div className="bg-sky-50 dark:bg-sky-950/20 p-4 rounded-2xl border border-sky-100/50 dark:border-sky-900/30 space-y-1">
+                                <h4 className="text-xs font-bold text-sky-800 dark:text-sky-400">Nutrición de la Semana {weekProgressSelected}</h4>
+                                <p className="text-[10px] text-slate-500 leading-relaxed">
+                                  Plan progresivo diseñado para la edad de {activeBaby?.name} (<strong>{simulateSixMonths ? "6 meses de simulación" : babyAge.text}</strong>). Cada semana introduce sabores complementarios saludables de forma segura.
+                                </p>
+                              </div>
+
+                              {/* Days Weekly List Calendar Grid */}
+                              <div className="space-y-4">
+                                {days.map(dayName => {
+                                  const dayMenu = weeklyMenu[dayName];
+                                  return (
+                                    <div key={dayName} className="bg-white dark:bg-slate-800 p-4 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-3">
+                                      <div className="flex items-center justify-between border-b pb-1.5 border-slate-100 dark:border-slate-700">
+                                        <span className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">{dayName}</span>
+                                        <span className="text-[9px] text-slate-400 font-bold">Semana {weekProgressSelected}</span>
+                                      </div>
+
+                                      {/* Meals Slots */}
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                        {[
+                                          { slotLabel: "🥣 Desayuno", keyName: "breakfast" },
+                                          { slotLabel: "🍎 Colación", keyName: "morningSnack" },
+                                          { slotLabel: "🍲 Almuerzo", keyName: "lunch" },
+                                          { slotLabel: "🍌 Merienda", keyName: "afternoonSnack" },
+                                          { slotLabel: "🥦 Cena", keyName: "dinner" }
+                                        ].map(slot => {
+                                          const mealSlot = dayMenu[slot.keyName as keyof typeof dayMenu];
+                                          if (!mealSlot || !mealSlot.recipeId) return null;
+                                          const recipe = RECIPES_DB.find(r => r.id === mealSlot.recipeId);
+                                          if (!recipe) return null;
+
+                                          return (
+                                            <div
+                                              key={slot.slotLabel}
+                                              onClick={() => handleLogRecipeView(recipe.id)}
+                                              className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/40 rounded-xl hover:bg-sky-50/40 dark:hover:bg-slate-900 border border-transparent hover:border-sky-100/30 transition-all cursor-pointer group"
+                                            >
+                                              <div className="space-y-0.5 text-left">
+                                                <span className="text-[9px] text-slate-400 font-bold block">{slot.slotLabel}</span>
+                                                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 line-clamp-1 group-hover:text-sky-600 transition-colors">
+                                                  {recipe.name}
+                                                </span>
+                                              </div>
+                                              <ChevronRight className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Shopping List checklist calculated for the chosen week */}
+                              <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
+                                <div className="flex justify-between items-center border-b pb-2.5 border-slate-100 dark:border-slate-700">
+                                  <div>
+                                    <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                                      <ShoppingCart className="w-4 h-4 text-sky-400" />
+                                      Lista de Compras de la Semana {weekProgressSelected}
+                                    </h3>
+                                    <p className="text-[10px] text-slate-400">Ingredientes necesarios para cocinar el menú de esta semana</p>
+                                  </div>
+                                  <span className="text-[10px] bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 px-2 py-0.5 rounded-full font-bold">
+                                    {shoppingListItems.length} ingredientes
+                                  </span>
+                                </div>
+
+                                {shoppingListItems.length > 0 ? (
+                                  <div className="space-y-2">
+                                    {shoppingListItems.map(item => {
+                                      const isChecked = !!weekShoppingChecked[weekKey]?.[item.name];
+                                      return (
+                                        <div
+                                          key={item.name}
+                                          onClick={() => handleToggleWeekShoppingCheck(item.name)}
+                                          className="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/30 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 border border-transparent transition-all cursor-pointer"
+                                        >
+                                          <div className="flex items-center gap-2.5 text-left">
+                                            <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all flex-shrink-0 ${
+                                              isChecked
+                                                ? "bg-sky-500 border-sky-400 text-white"
+                                                : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800"
+                                            }`}>
+                                              {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                            </div>
+                                            <span className={`text-xs font-semibold ${isChecked ? "text-slate-400 line-through font-normal" : "text-slate-700 dark:text-slate-200"}`}>
+                                              {item.name}
+                                            </span>
+                                          </div>
+                                          <span className="text-[10px] text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full flex-shrink-0">
+                                            {item.category}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-slate-400 py-4 text-center">No se requieren compras para esta semana.</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {/* SUBTAB 3: RECETARIO DE DESAYUNOS POR SEMANAS */}
+                    {activeDashboardSubTab === "desayunos" && (
+                      <div className="space-y-5 text-left">
+                        <div className="bg-pink-50/50 dark:bg-pink-950/10 p-4 rounded-2xl border border-pink-100/40 text-left space-y-1">
+                          <h4 className="text-xs font-bold text-pink-700 dark:text-pink-400">Recetario de Desayunos Saludables (Semanas 1-24)</h4>
+                          <p className="text-[10px] text-slate-500 leading-relaxed">
+                            Sugerencias de desayunos nutritivos organizados semana por semana para el desarrollo madurativo de tu bebé.
+                          </p>
+                        </div>
+
+                        {/* Breakfast Weekly Suggestions Feed */}
+                        <div className="space-y-4">
+                          {(() => {
+                            // Find safe breakfasts
+                            const safeBreakfasts = RECIPES_DB.filter(recipe => {
+                              return recipe.category === "desayuno" || recipe.category === "lonchera";
+                            });
+
+                            if (safeBreakfasts.length === 0) {
+                              return (
+                                <div className="p-12 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                                  <span className="text-4xl block">🍼</span>
+                                  <p className="text-xs font-semibold mt-2">Lactancia exclusiva</p>
+                                  <p className="text-[10px] mt-1">Usa la simulación de 6 meses arriba para explorar desayunos complementarios futuros.</p>
+                                </div>
+                              );
+                            }
+
+                            return Array.from({ length: 24 }, (_, i) => i + 1).map(weekNum => {
+                              // Select breakfast recipe deterministically
+                              const breakfastRecipe = safeBreakfasts[(weekNum * 5) % safeBreakfasts.length];
+                              const isFav = favorites.includes(breakfastRecipe.id);
+                              
+                              return (
+                                <div
+                                  key={weekNum}
+                                  className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs overflow-hidden flex flex-col justify-between"
+                                >
+                                  <div className="p-4 space-y-3">
+                                    <div className="flex justify-between items-start">
+                                      <div>
+                                        <span className="text-[9px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider block w-fit">
+                                          Semana {weekNum}
+                                        </span>
+                                        <h4 className="text-sm font-bold text-slate-800 dark:text-white mt-1 flex items-center gap-1.5">
+                                          🥣 {breakfastRecipe.name}
+                                        </h4>
+                                      </div>
+                                      
+                                      <button
+                                        onClick={() => handleToggleFavorite(breakfastRecipe.id)}
+                                        className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded-full hover:text-rose-500 text-slate-400"
+                                      >
+                                        <Heart className={`w-3.5 h-3.5 ${isFav ? "fill-rose-500 text-rose-500" : ""}`} />
+                                      </button>
+                                    </div>
+
+                                    {/* Info Summary */}
+                                    <div className="grid grid-cols-2 gap-2 text-[10px] text-slate-500 font-medium">
+                                      <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded-lg">
+                                        ⏱️ Preparación: <strong className="text-slate-700 dark:text-slate-200">{breakfastRecipe.prepTime + breakfastRecipe.cookTime} min</strong>
+                                      </div>
+                                      <div className="p-2 bg-slate-50 dark:bg-slate-900/30 rounded-lg">
+                                        🥣 Textura: <strong className="text-slate-700 dark:text-slate-200">{breakfastRecipe.texture}</strong>
+                                      </div>
+                                    </div>
+
+                                    {/* Brief Ingredients Preview List */}
+                                    <div className="space-y-1">
+                                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Ingredientes básicos:</span>
+                                      <div className="flex flex-wrap gap-1">
+                                        {breakfastRecipe.ingredients.map((ing, idx) => (
+                                          <span key={idx} className="text-[10px] bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-md">
+                                            {ing}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Action Bar */}
+                                  <div className="p-3 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-700/60">
+                                    <button
+                                      onClick={() => handleLogRecipeView(breakfastRecipe.id)}
+                                      className="w-full py-2.5 bg-pink-500 hover:bg-pink-600 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                                    >
+                                      <span>Ver Receta y Modo de Preparación</span>
+                                      <ChevronRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* SUBTAB 4: FICHA DE SALUD & SEGUIMIENTO DE CRECIMIENTO */}
+                    {activeDashboardSubTab === "crecimiento" && (
+                      <div className="space-y-5 text-left">
+                        {/* Presentation Card */}
+                        <div className={`p-5 rounded-3xl border transition-all ${
+                          isDarkMode 
+                            ? "bg-slate-800 border-slate-700 shadow-xs" 
+                            : "bg-white border-pink-100 shadow-sm"
+                        } space-y-4`}>
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 border-slate-100 dark:border-slate-700 gap-3">
+                            <div>
+                              <h3 className="font-display font-bold text-md text-slate-800 dark:text-white flex items-center gap-1.5">
+                                <User className="w-4.5 h-4.5 text-pink-400" />
+                                Perfil de Alimentación de {activeBaby?.name}
+                              </h3>
+                              <p className="text-[10px] text-slate-500">Ficha de presentación y requerimientos especiales</p>
+                            </div>
+                            
+                            {/* Actions Header */}
+                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                              <label 
+                                htmlFor="dashboard-baby-photo-btn"
+                                className="px-2 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
+                              >
+                                <Camera className="w-3 h-3" />
+                                <span>Subir Foto</span>
+                              </label>
+                              <input
+                                type="file"
+                                id="dashboard-baby-photo-btn"
+                                accept="image/*"
+                                onChange={handlePhotoChange}
+                                className="hidden"
+                              />
+
+                              <button
+                                onClick={() => {
+                                  handleStartEditBaby();
+                                  setActiveTab("profile");
+                                }}
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                                <span>Editar</span>
+                              </button>
+
+                              <button
+                                onClick={handleDeleteBaby}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>Eliminar</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Profile Stats Grid (Baby Card Details) */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 text-left space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                📅 Nacimiento
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric"
+                                }) : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 text-left space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                ⚖️ Último Peso
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {growthEntries.length > 0 
+                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 text-left space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                📏 Última Altura
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {growthEntries.length > 0 
+                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 text-left space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                🧠 Perím. Cefálico
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
+                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Allergies and restricted items lists inside profile presentation */}
+                          <div className="space-y-2.5 pt-1">
+                            {/* Allergies row */}
+                            <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 text-left space-y-1">
+                              <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                ⚠️ Alergias Registradas
+                              </h4>
+                              <div className="flex flex-wrap gap-1">
+                                {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
+                                  activeBaby.allergies.map(alg => (
+                                    <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
+                                      {alg}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Restrictions row */}
+                            <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 text-left space-y-1">
+                              <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                                🚫 Alimentos Restringidos
+                              </h4>
+                              <div className="flex flex-wrap gap-1">
+                                {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
+                                  activeBaby.restrictedFoods.map(food => (
+                                    <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
+                                      {food}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Ninguno restringido</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Preferences row */}
+                            <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/20 text-left space-y-1">
+                              <h4 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
+                                ⭐ Preferencias o Favoritos
+                              </h4>
+                              <div className="flex flex-wrap gap-1">
+                                {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
+                                  activeBaby.preferences.map(pref => (
+                                    <span key={pref} className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+                                      {pref}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Sin preferencias guardadas</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Pediatric observations block */}
+                          {activeBaby?.observations && (
+                            <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800 text-left">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                                📝 Notas / Observaciones Especiales
+                              </span>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                                &ldquo;{activeBaby.observations}&rdquo;
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Growth chart curves */}
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center px-1">
+                            <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">Curvas de Crecimiento Oficiales</h3>
+                            <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2 py-0.5 rounded-full font-bold">
+                              Carnet de Vacunación 📊
+                            </span>
+                          </div>
+
+                          <GrowthChart
+                            entries={growthEntries}
+                            onAddEntry={handleAddGrowthEntry}
+                            onDeleteEntry={handleDeleteGrowthEntry}
+                            birthDate={activeBaby?.birthDate}
+                          />
+                        </div>
+                      </div>
+                    )}
+
                   </div>
                 </div>
               )}
 
               {/* --- VIEW: RECIPES (CATALOGUE & SEARCH) --- */}
               {activeTab === "recipes" && (
-                <div className="space-y-6">
+                <div className="space-y-5 text-left">
+                  {/* Explanatory note box explaining the safe growth lock/unlock system */}
+                  <div className="bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-500/20 dark:border-emerald-500/30 p-4 rounded-2xl flex gap-3.5 shadow-xs">
+                    <span className="text-2xl select-none mt-0.5">💡</span>
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-400">Nutrición & Recetario Completo</h4>
+                      <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                        ¡Hemos habilitado todo el catálogo de recetas! Puedes ver y buscar libremente cualquier plato. Ten en cuenta que la edad sugerida (ej. 6m, 9m, 12m) se indica en cada tarjeta para guiarte en el desarrollo de texturas seguras conforme crece tu pequeño (hoy: <strong>{babyAge.text}</strong>).
+                      </p>
+                    </div>
+                  </div>
+
                   {/* Search and filter block */}
                   <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
                     <h3 className="font-display font-bold text-lg text-slate-800 dark:text-white">Buscador Inteligente de Recetas</h3>
@@ -1094,12 +1828,10 @@ export default function App() {
                         className="text-sm p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                       >
                         <option value="todos">Cualquier Edad</option>
-                        <option value="6 meses">6 meses</option>
-                        <option value="7 meses">7 meses</option>
-                        <option value="8 meses">8 meses</option>
-                        <option value="9 meses">9 meses</option>
-                        <option value="10 meses">10 meses</option>
-                        <option value="12 meses">12 meses</option>
+                        {babyAge.months >= 6 && <option value="6 meses">6 meses</option>}
+                        {babyAge.months >= 9 && <option value="9 meses">9 meses</option>}
+                        {babyAge.months >= 12 && <option value="12 meses">12 meses</option>}
+                        {babyAge.months >= 18 && <option value="18 meses">18 meses</option>}
                       </select>
 
                       <select
@@ -1208,10 +1940,25 @@ export default function App() {
                     })}
 
                     {filteredRecipes.length === 0 && (
-                      <div className="col-span-full py-16 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                        <Search className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="text-sm font-semibold">No se encontraron recetas.</p>
-                        <p className="text-xs text-slate-400 mt-1">Prueba con ingredientes más genéricos o limpia los filtros.</p>
+                      <div className="col-span-full py-16 px-4 text-center text-slate-400 bg-white dark:bg-slate-800 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                        {babyAge.months < 6 ? (
+                          <div className="space-y-3 max-w-sm mx-auto">
+                            <span className="text-4xl block">🍼</span>
+                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">Lactancia Exclusiva o Fórmula</h4>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                              {activeBaby?.name} tiene <strong>{babyAge.text}</strong>. De acuerdo con la OMS, los bebés menores de 6 meses no deben consumir alimentos sólidos ni papillas todavía. 
+                            </p>
+                            <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-100/10">
+                              Las recetas se desbloquearán automáticamente cuando cumpla los 6 meses de edad.
+                            </p>
+                          </div>
+                        ) : (
+                          <>
+                            <Search className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p className="text-sm font-semibold">No se encontraron recetas.</p>
+                            <p className="text-xs text-slate-400 mt-1">Prueba con ingredientes más genéricos o limpia los filtros.</p>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1628,33 +2375,700 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="space-y-6">
-                      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 p-6 sm:p-8 rounded-3xl text-white">
+                      <div className="bg-gradient-to-r from-emerald-500 to-teal-500 p-6 sm:p-8 rounded-3xl text-white shadow-xs">
                         <h2 className="font-display font-bold text-xl sm:text-2xl mb-1">Guías Educativas para Mamás Primerizas</h2>
                         <p className="text-xs sm:text-sm text-emerald-100">Información avalada por pediatras para guiarte en el BLW, papillas y prevención de alergias.</p>
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {GUIDES_DB.map(article => (
-                          <div
-                            key={article.id}
-                            onClick={() => setSelectedArticle(article)}
-                            className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs hover:shadow-md cursor-pointer transition-all space-y-3"
-                          >
-                            <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 rounded-xl inline-block">
-                              <BookOpen className="w-5 h-5" />
-                            </div>
-                            <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">
-                              {article.title}
-                            </h3>
-                            <p className="text-xs text-slate-400 leading-relaxed">
-                              {article.summary}
-                            </p>
-                            <span className="text-xs text-emerald-600 font-bold flex items-center gap-1 hover:underline pt-2">
-                              Leer artículo completo <ChevronRight className="w-3.5 h-3.5" />
-                            </span>
-                          </div>
-                        ))}
+                      {/* Selector de subpestañas */}
+                      <div className="flex gap-2 p-1.5 bg-slate-100 dark:bg-slate-800/80 rounded-2xl w-fit border border-slate-200/50 dark:border-slate-700">
+                        <button
+                          onClick={() => setGuidesSubTab("articles")}
+                          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                            guidesSubTab === "articles"
+                              ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          <BookOpen className="w-3.5 h-3.5" /> Artículos Educativos
+                        </button>
+                        <button
+                          onClick={() => setGuidesSubTab("faq")}
+                          className={`flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                            guidesSubTab === "faq"
+                              ? "bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-xs"
+                              : "text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+                          }`}
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" /> Preguntas Frecuentes (FAQ)
+                        </button>
                       </div>
+
+                      {guidesSubTab === "articles" ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
+                          {GUIDES_DB.map(article => (
+                            <div
+                              key={article.id}
+                              onClick={() => setSelectedArticle(article)}
+                              className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs hover:shadow-md cursor-pointer transition-all space-y-3"
+                            >
+                              <div className="p-3 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 rounded-xl inline-block">
+                                <BookOpen className="w-5 h-5" />
+                              </div>
+                              <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">
+                                {article.title}
+                              </h3>
+                              <p className="text-xs text-slate-400 leading-relaxed">
+                                {article.summary}
+                              </p>
+                              <span className="text-xs text-emerald-600 font-bold flex items-center gap-1 hover:underline pt-2">
+                                Leer artículo completo <ChevronRight className="w-3.5 h-3.5" />
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="space-y-4 animate-in fade-in duration-300">
+                          {FAQ_DB.map(faq => (
+                            <details
+                              key={faq.id}
+                              className="group bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs cursor-pointer transition-all [&_summary::-webkit-details-marker]:hidden"
+                            >
+                              <summary className="flex justify-between items-center font-display font-bold text-sm text-slate-800 dark:text-white list-none">
+                                <span className="pr-4">{faq.question}</span>
+                                <span className="p-1.5 bg-slate-50 dark:bg-slate-700 rounded-lg group-open:rotate-90 transition-transform flex-shrink-0">
+                                  <ChevronRight className="w-3.5 h-3.5 text-slate-400 dark:text-slate-300" />
+                                </span>
+                              </summary>
+                              <div className="mt-3 text-xs text-slate-600 dark:text-slate-300 leading-relaxed whitespace-pre-wrap pt-3 border-t border-slate-50 dark:border-slate-700/50">
+                                {faq.answer}
+                              </div>
+                            </details>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* --- VIEW: PLANNER PDF (24 SEMANAS ORIGINAL DEL PDF + RECETARIOS POR EDADES) --- */}
+              {activeTab === "pdf-planner" && (
+                <div className="space-y-6">
+                  {/* Title Banner */}
+                  <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 p-6 sm:p-8 rounded-3xl text-white shadow-xs text-left relative overflow-hidden">
+                    <div className="relative z-10 space-y-2">
+                      <span className="bg-white/20 text-white text-[10px] uppercase font-extrabold tracking-wider px-2.5 py-1 rounded-full">
+                        Manuales y Planes Oficiales
+                      </span>
+                      <h2 className="font-display font-extrabold text-xl sm:text-2xl">
+                        Colección de Nutrición Infantil
+                      </h2>
+                      <p className="text-xs sm:text-sm text-indigo-50 leading-relaxed max-w-2xl">
+                        Explora la estructura nutricional por edades o sigue el plan semanal detallado con su lista de compras tal cual están diseñados en los manuales oficiales.
+                      </p>
+                    </div>
+                    {/* Decorative abstract circle background */}
+                    <div className="absolute right-[-10%] top-[-20%] w-72 h-72 bg-white/10 rounded-full blur-3xl pointer-events-none"></div>
+                  </div>
+
+                  {/* Inner Tab Selector: Weekly Plan vs Recipe Books */}
+                  <div className="flex gap-2 border-b border-slate-100 dark:border-slate-800 pb-2">
+                    <button
+                      onClick={() => {
+                        setPdfPlannerSubTab("plan");
+                        setSelectedPdfRecipe(null);
+                      }}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        pdfPlannerSubTab === "plan"
+                          ? "bg-indigo-500 text-white shadow-xs"
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100/50 dark:bg-slate-800/50"
+                      }`}
+                    >
+                      <CalendarDays className="w-3.5 h-3.5" /> Plan de 24 Semanas
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPdfPlannerSubTab("recetarios");
+                        setSelectedPdfRecipe(null);
+                      }}
+                      className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        pdfPlannerSubTab === "recetarios"
+                          ? "bg-indigo-500 text-white shadow-xs"
+                          : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200 bg-slate-100/50 dark:bg-slate-800/50"
+                      }`}
+                    >
+                      <BookOpen className="w-3.5 h-3.5" /> Recetarios por Edades (9-24m)
+                    </button>
+                  </div>
+
+                  {pdfPlannerSubTab === "plan" ? (
+                    <div className="space-y-6">
+                      {/* Horizontal Weekly Carousel (Weeks 1 to 24) */}
+                      <div className="space-y-2 text-left">
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-extrabold text-slate-400 dark:text-slate-400 uppercase tracking-wider block">
+                            Selecciona una Semana del Plan (1 - 24):
+                          </label>
+                          <div className="flex gap-1.5">
+                            <button
+                              disabled={activePdfWeek === 1}
+                              onClick={() => setActivePdfWeek(prev => Math.max(1, prev - 1))}
+                              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <ArrowLeft className="w-4 h-4" />
+                            </button>
+                            <button
+                              disabled={activePdfWeek === 24}
+                              onClick={() => setActivePdfWeek(prev => Math.min(24, prev + 1))}
+                              className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-1.5 px-0.5">
+                          {WEEKLY_PLANNER_PDF.map(wk => {
+                            const isSelected = activePdfWeek === wk.weekNumber;
+                            // Identify stage color for label tag
+                            let stageColor = "bg-indigo-50 text-indigo-600 dark:bg-indigo-950/40 dark:text-indigo-400";
+                            if (wk.stageTitle.includes("Etapa 2")) stageColor = "bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-400";
+                            else if (wk.stageTitle.includes("Etapa 3")) stageColor = "bg-pink-50 text-pink-600 dark:bg-pink-950/40 dark:text-pink-400";
+                            else if (wk.stageTitle.includes("Etapa 4")) stageColor = "bg-orange-50 text-orange-600 dark:bg-orange-950/40 dark:text-orange-400";
+
+                            return (
+                              <button
+                                key={wk.weekNumber}
+                                onClick={() => setActivePdfWeek(wk.weekNumber)}
+                                className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition-all flex-shrink-0 cursor-pointer border flex flex-col items-center gap-1 min-w-[90px] ${
+                                  isSelected
+                                    ? "bg-indigo-500 border-indigo-400 text-white shadow-md font-extrabold scale-105"
+                                    : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                }`}
+                              >
+                                <span>Semana {wk.weekNumber}</span>
+                                <span className={`text-[8px] px-1.5 py-0.5 rounded-md font-bold ${isSelected ? "bg-white/20 text-white" : stageColor}`}>
+                                  {wk.stageTitle.split(":")[0]}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const currentWeekData = WEEKLY_PLANNER_PDF.find(w => w.weekNumber === activePdfWeek) || WEEKLY_PLANNER_PDF[0];
+                        
+                        // Toggle function for our local checked checklist state
+                        const handleTogglePdfShoppingItem = (itemName: string) => {
+                          setPdfShoppingChecked(prev => {
+                            const weekChecks = prev[activePdfWeek] || {};
+                            const updatedWeekChecks = {
+                              ...weekChecks,
+                              [itemName]: !weekChecks[itemName]
+                            };
+                            return {
+                              ...prev,
+                              [activePdfWeek]: updatedWeekChecks
+                            };
+                          });
+                        };
+
+                        // Check all / Reset helper
+                        const handleResetPdfShopping = () => {
+                          setPdfShoppingChecked(prev => {
+                            const updated = { ...prev };
+                            delete updated[activePdfWeek];
+                            return updated;
+                          });
+                        };
+
+                        const handleCheckAllPdfShopping = () => {
+                          const allItems: string[] = [];
+                          currentWeekData.shoppingList.forEach(cat => {
+                            cat.items.forEach(it => allItems.push(it.name));
+                          });
+
+                          setPdfShoppingChecked(prev => {
+                            const weekChecks: { [itemName: string]: boolean } = {};
+                            allItems.forEach(name => {
+                              weekChecks[name] = true;
+                            });
+                            return {
+                              ...prev,
+                              [activePdfWeek]: weekChecks
+                            };
+                          });
+                        };
+
+                        // Compute shopping stats
+                        let totalItemsCount = 0;
+                        let checkedItemsCount = 0;
+                        const weekChecks = pdfShoppingChecked[activePdfWeek] || {};
+                        
+                        currentWeekData.shoppingList.forEach(cat => {
+                          cat.items.forEach(it => {
+                            totalItemsCount++;
+                            if (weekChecks[it.name]) {
+                              checkedItemsCount++;
+                            }
+                          });
+                        });
+
+                        const progressPercent = totalItemsCount > 0 
+                          ? Math.round((checkedItemsCount / totalItemsCount) * 100) 
+                          : 0;
+
+                        // Copy shopping list helper
+                        const handleCopyShoppingList = () => {
+                          let text = `🛒 LISTA DE COMPRAS - SEMANA ${activePdfWeek}\n`;
+                          text += `📋 ${currentWeekData.weekTitle}\n\n`;
+                          currentWeekData.shoppingList.forEach(cat => {
+                            text += `📂 ${cat.category.toUpperCase()}:\n`;
+                            cat.items.forEach(it => {
+                              const status = weekChecks[it.name] ? "[x]" : "[ ]";
+                              text += ` ${status} ${it.name} (${it.quantity || "al gusto"})\n`;
+                            });
+                            text += `\n`;
+                          });
+                          text += `Generado desde BabyChef 👶 Feliz en la mesa.`;
+                          navigator.clipboard.writeText(text);
+                          alert("¡Lista de compras copiada al portapapeles! 📋");
+                        };
+
+                        return (
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 text-left">
+                            
+                            {/* LEFT & CENTER COLUMN: Days Weekly Menu Calendar */}
+                            <div className="lg:col-span-2 space-y-4">
+                              
+                              {/* Banner Info about the selected week's stage and guidelines */}
+                              <div className="bg-indigo-50 dark:bg-indigo-950/20 p-5 rounded-2xl border border-indigo-100/50 dark:border-indigo-900/30 space-y-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-[10px] bg-indigo-500 text-white font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider">
+                                    {currentWeekData.stageTitle}
+                                  </span>
+                                  <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-extrabold px-2.5 py-1 rounded-md">
+                                    Semana {activePdfWeek} de 24
+                                  </span>
+                                </div>
+                                <h3 className="font-display font-extrabold text-sm text-slate-800 dark:text-white">
+                                  {currentWeekData.weekTitle}
+                                </h3>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                  Sigue el plan de alimentación de esta semana exactamente como lo indica la guía para asegurar el progreso y la introducción oportuna de cada alimento.
+                                </p>
+                              </div>
+
+                              {/* Days Grid Cards */}
+                              <div className="space-y-4">
+                                {currentWeekData.days.map((day, dIdx) => (
+                                  <div
+                                    key={dIdx}
+                                    className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs hover:border-indigo-100 dark:hover:border-indigo-900/40 transition-all space-y-3"
+                                  >
+                                    <div className="flex items-center justify-between border-b pb-2 border-slate-100 dark:border-slate-700">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-indigo-500"></div>
+                                        <span className="text-xs font-extrabold text-slate-800 dark:text-white uppercase tracking-wider">
+                                          {day.dayName}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] text-slate-400 font-bold bg-slate-50 dark:bg-slate-700 px-2.5 py-0.5 rounded-md">
+                                        Plan Oficial PDF
+                                      </span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                      {/* Breakfast */}
+                                      <div className="p-3 bg-slate-50/70 dark:bg-slate-900/30 rounded-xl space-y-1 border border-transparent hover:border-indigo-100/30 transition-all">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-xs text-amber-500">🌅</span>
+                                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Desayuno</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                          {day.breakfast || "Solo leche (materna/fórmula)"}
+                                        </p>
+                                      </div>
+
+                                      {/* Lunch */}
+                                      <div className="p-3 bg-slate-50/70 dark:bg-slate-900/30 rounded-xl space-y-1 border border-transparent hover:border-indigo-100/30 transition-all">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-xs text-emerald-500">🍲</span>
+                                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Almuerzo / Comida</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                          {day.lunch || "No requerido en esta etapa"}
+                                        </p>
+                                      </div>
+
+                                      {/* Dinner */}
+                                      <div className="p-3 bg-slate-50/70 dark:bg-slate-900/30 rounded-xl space-y-1 border border-transparent hover:border-indigo-100/30 transition-all">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-xs text-indigo-500">🥦</span>
+                                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Cena</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                          {day.dinner || "No requerido en esta etapa"}
+                                        </p>
+                                      </div>
+
+                                      {/* Snack */}
+                                      <div className="p-3 bg-slate-50/70 dark:bg-slate-900/30 rounded-xl space-y-1 border border-transparent hover:border-indigo-100/30 transition-all">
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="text-xs text-pink-500">🍎</span>
+                                          <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-wider">Colación / Merienda</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                                          {day.snack || "No requerido en esta etapa"}
+                                        </p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* RIGHT COLUMN: Interactive Shopping List */}
+                            <div className="lg:col-span-1 space-y-5">
+                              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-5 sticky top-4">
+                                
+                                {/* Checklist Header */}
+                                <div className="space-y-2 border-b pb-3 border-slate-100 dark:border-slate-700">
+                                  <div className="flex justify-between items-start">
+                                    <div>
+                                      <h3 className="font-display font-extrabold text-md text-slate-800 dark:text-white flex items-center gap-1.5">
+                                        <ShoppingCart className="w-5 h-5 text-indigo-500" />
+                                        Lista de Compras
+                                      </h3>
+                                      <p className="text-[10px] text-slate-400">
+                                        Ingredientes oficiales para la Semana {activePdfWeek}
+                                      </p>
+                                    </div>
+                                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold">
+                                      Semana {activePdfWeek}
+                                    </span>
+                                  </div>
+
+                                  {/* Progress bar and counter */}
+                                  <div className="space-y-1.5 pt-2">
+                                    <div className="flex justify-between text-[10px] font-bold text-slate-500 dark:text-slate-400">
+                                      <span>Progreso de Compras</span>
+                                      <span>{checkedItemsCount} de {totalItemsCount} ({progressPercent}%)</span>
+                                    </div>
+                                    <div className="w-full bg-slate-100 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                                      <div
+                                        className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                                        style={{ width: `${progressPercent}%` }}
+                                      ></div>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Checklist Items Grouped by Category */}
+                                <div className="space-y-4 max-h-[450px] overflow-y-auto pr-1 scrollbar-thin">
+                                  {currentWeekData.shoppingList.map((cat, cIdx) => (
+                                    <div key={cIdx} className="space-y-2">
+                                      <h4 className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                                        {cat.category}
+                                      </h4>
+                                      <div className="space-y-1.5">
+                                        {cat.items.map((it, iIdx) => {
+                                          const isChecked = !!weekChecks[it.name];
+                                          return (
+                                            <div
+                                              key={iIdx}
+                                              onClick={() => handleTogglePdfShoppingItem(it.name)}
+                                              className="flex items-center justify-between p-2.5 bg-slate-50/70 dark:bg-slate-900/30 hover:bg-indigo-50/30 dark:hover:bg-slate-900/50 rounded-xl border border-transparent hover:border-indigo-100/20 transition-all cursor-pointer select-none"
+                                            >
+                                              <div className="flex items-center gap-2.5 text-left min-w-0">
+                                                <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all flex-shrink-0 ${
+                                                  isChecked
+                                                    ? "bg-indigo-500 border-indigo-400 text-white"
+                                                    : "border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800"
+                                                }`}>
+                                                  {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                                                </div>
+                                                <span className={`text-xs font-bold truncate ${
+                                                  isChecked 
+                                                    ? "text-slate-400 line-through font-normal" 
+                                                    : "text-slate-700 dark:text-slate-200"
+                                                }`}>
+                                                  {it.name}
+                                                </span>
+                                              </div>
+                                              {it.quantity && (
+                                                <span className="text-[9px] text-slate-400 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 px-2 py-0.5 rounded-md flex-shrink-0 font-bold ml-2">
+                                                  {it.quantity}
+                                                </span>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                  ))}
+
+                                  {totalItemsCount === 0 && (
+                                    <p className="text-xs text-slate-400 py-4 text-center">No se requieren compras para esta semana.</p>
+                                  )}
+                                </div>
+
+                                {/* Actions Footer inside Sidebar Card */}
+                                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+                                  <button
+                                    onClick={handleCheckAllPdfShopping}
+                                    className="py-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-bold transition-all cursor-pointer border border-slate-200/50 dark:border-transparent"
+                                  >
+                                    Marcar Todo
+                                  </button>
+                                  <button
+                                    onClick={handleResetPdfShopping}
+                                    className="py-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-bold transition-all cursor-pointer border border-slate-200/50 dark:border-transparent"
+                                  >
+                                    Limpiar Lista
+                                  </button>
+                                </div>
+
+                                <button
+                                  onClick={handleCopyShoppingList}
+                                  className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-sm hover:shadow-md"
+                                >
+                                  <span>Compartir Lista</span>
+                                  <Share2 className="w-3.5 h-3.5" />
+                                </button>
+
+                              </div>
+                            </div>
+
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  ) : (
+                    /* SUB-TAB: RECETARIOS POR EDADES (MANUALES PDF EXTRAÍDOS) */
+                    <div className="space-y-6 animate-in fade-in duration-300">
+                      {/* Age Selector Tabs */}
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-100 dark:border-slate-800">
+                        <span className="text-xs font-extrabold text-slate-500 dark:text-slate-400 uppercase tracking-wider pl-1">
+                          Selecciona un Manual por Edad:
+                        </span>
+                        <div className="flex flex-wrap gap-1.5 w-full sm:w-auto">
+                          {(["9-12", "12-18", "18-24"] as const).map((age) => {
+                            const isSelected = pdfBookAge === age;
+                            const labels = {
+                              "9-12": "9 - 12 Meses",
+                              "12-18": "12 - 18 Meses",
+                              "18-24": "18 - 24 Meses"
+                            };
+                            return (
+                              <button
+                                key={age}
+                                onClick={() => {
+                                  setPdfBookAge(age);
+                                  setSelectedPdfRecipe(null);
+                                }}
+                                className={`flex-1 sm:flex-initial px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all cursor-pointer border ${
+                                  isSelected
+                                    ? "bg-indigo-500 border-indigo-400 text-white shadow-xs"
+                                    : "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                }`}
+                              >
+                                {labels[age]}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {(() => {
+                        const book = RECIPES_BY_AGE_PDF[pdfBookAge];
+                        if (!book) return null;
+
+                        return (
+                          <div className="space-y-6">
+                            {/* General recommendations card for this age */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                              <div className="p-5 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-950/20 dark:to-purple-950/20 rounded-2xl border border-indigo-100/30 dark:border-indigo-950/50 space-y-3">
+                                <h3 className="font-display font-extrabold text-sm text-indigo-700 dark:text-indigo-400 flex items-center gap-1.5">
+                                  <Info className="w-4 h-4" /> Recomendaciones Generales ({book.ageRange})
+                                </h3>
+                                <ul className="space-y-1.5">
+                                  {book.recommendations.map((rec, rIdx) => (
+                                    <li key={rIdx} className="text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-1.5 leading-relaxed">
+                                      <span className="text-indigo-500 dark:text-indigo-400 select-none mt-0.5">•</span>
+                                      <span>{rec}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+
+                              <div className="p-5 bg-gradient-to-br from-pink-500/10 to-rose-500/10 dark:from-pink-950/20 dark:to-rose-950/20 rounded-2xl border border-pink-100/30 dark:border-pink-950/50 space-y-3">
+                                <h3 className="font-display font-extrabold text-sm text-pink-700 dark:text-pink-400 flex items-center gap-1.5">
+                                  <Sparkles className="w-4 h-4" /> Consejos y Hacks de Cocina
+                                </h3>
+                                <ul className="space-y-1.5">
+                                  {book.tips.map((tip, tIdx) => (
+                                    <li key={tIdx} className="text-[11px] text-slate-600 dark:text-slate-300 flex items-start gap-1.5 leading-relaxed">
+                                      <span className="text-pink-500 dark:text-pink-400 select-none mt-0.5">★</span>
+                                      <span>{tip}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            </div>
+
+                            {/* Detailed view of a single PDF recipe, or the full catalog browse */}
+                            {selectedPdfRecipe ? (
+                              <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-5 animate-in slide-in-from-bottom-4 duration-300">
+                                {/* Recipe header with back button */}
+                                <div className="flex items-center justify-between border-b pb-4 border-slate-100 dark:border-slate-700">
+                                  <button
+                                    onClick={() => setSelectedPdfRecipe(null)}
+                                    className="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                  >
+                                    <ArrowLeft className="w-4 h-4" /> Volver al recetario por edad
+                                  </button>
+                                  <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-3 py-1 rounded-full font-bold">
+                                    {selectedPdfRecipe.category.toUpperCase()} • {selectedPdfRecipe.ageRange}
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                  {/* Left col: Summary */}
+                                  <div className="md:col-span-1 space-y-4 col-span-1">
+                                    <div className="h-40 bg-gradient-to-tr from-indigo-100 to-purple-50 dark:from-indigo-950 dark:to-slate-900 rounded-xl flex items-center justify-center text-5xl">
+                                      {selectedPdfRecipe.category === "desayuno" ? "🥣" : selectedPdfRecipe.category === "merienda" ? "🍎" : "🍲"}
+                                    </div>
+                                    <h2 className="font-display font-extrabold text-lg text-slate-800 dark:text-white leading-tight">
+                                      {selectedPdfRecipe.name}
+                                    </h2>
+
+                                    <div className="space-y-2 text-xs">
+                                      <div className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-xl flex justify-between items-center">
+                                        <span className="text-slate-400">⏱️ Prep + Cocción:</span>
+                                        <strong className="text-slate-700 dark:text-slate-200">{(selectedPdfRecipe.prepTime || 0) + (selectedPdfRecipe.cookTime || 0)} min</strong>
+                                      </div>
+                                      <div className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-xl flex justify-between items-center">
+                                        <span className="text-slate-400">🥣 Textura recomendada:</span>
+                                        <strong className="text-slate-700 dark:text-slate-200">{selectedPdfRecipe.texture}</strong>
+                                      </div>
+                                      {selectedPdfRecipe.attributes && selectedPdfRecipe.attributes.length > 0 && (
+                                        <div className="p-3 bg-slate-50 dark:bg-slate-900/30 rounded-xl space-y-1.5">
+                                          <span className="text-slate-400 block mb-0.5">Etiquetas Dietéticas:</span>
+                                          <div className="flex flex-wrap gap-1">
+                                            {selectedPdfRecipe.attributes.map(attr => (
+                                              <span key={attr} className="text-[9px] bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md font-bold">
+                                                {attr}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Center col: Ingredients */}
+                                  <div className="md:col-span-1 space-y-3">
+                                    <h3 className="font-display font-extrabold text-sm text-slate-800 dark:text-white border-b pb-1 border-slate-100 dark:border-slate-700 flex items-center gap-1.5">
+                                      <UtensilsCrossed className="w-4 h-4 text-indigo-500" /> Ingredientes
+                                    </h3>
+                                    <ul className="space-y-2">
+                                      {selectedPdfRecipe.ingredients.map((ing, idx) => (
+                                        <li key={idx} className="text-xs text-slate-600 dark:text-slate-300 flex items-start gap-2">
+                                          <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0"></div>
+                                          <span>{ing}</span>
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+
+                                  {/* Right col: Preparation steps */}
+                                  <div className="md:col-span-1 space-y-4">
+                                    <div className="space-y-3">
+                                      <h3 className="font-display font-extrabold text-sm text-slate-800 dark:text-white border-b pb-1 border-slate-100 dark:border-slate-700 flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-500" /> Modo de Preparación
+                                      </h3>
+                                      <ol className="space-y-3">
+                                        {selectedPdfRecipe.steps.map((step, idx) => (
+                                          <li key={idx} className="text-xs text-slate-600 dark:text-slate-300 flex gap-2">
+                                            <span className="font-bold text-indigo-500 text-[11px] bg-indigo-50 dark:bg-indigo-950/40 w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                                              {idx + 1}
+                                            </span>
+                                            <span className="leading-relaxed">{step}</span>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    </div>
+
+                                    {selectedPdfRecipe.tips && selectedPdfRecipe.tips.length > 0 && (
+                                      <div className="p-3 bg-indigo-50/50 dark:bg-indigo-950/10 rounded-xl border border-indigo-100/20 space-y-1 text-left">
+                                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-extrabold uppercase tracking-wider block">💡 Consejo de éxito</span>
+                                        <p className="text-[11px] text-slate-600 dark:text-slate-300 italic leading-relaxed">
+                                          &ldquo;{selectedPdfRecipe.tips[0]}&rdquo;
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              /* Browse list grouped by course category */
+                              <div className="space-y-6">
+                                {(["breakfast", "lunchDinner", "snacks"] as const).map((categoryKey) => {
+                                  const list = book.categories[categoryKey];
+                                  const categoryLabel = {
+                                    breakfast: "🥣 Desayunos del Manual",
+                                    lunchDinner: "🍲 Almuerzos y Cenas",
+                                    snacks: "🍎 Meriendas y Snacks Blandos"
+                                  };
+                                  if (!list || list.length === 0) return null;
+
+                                  return (
+                                    <div key={categoryKey} className="space-y-3">
+                                      <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white pl-1 border-l-2 border-indigo-500">
+                                        {categoryLabel[categoryKey]} ({list.length} recetas)
+                                      </h3>
+
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                                        {list.map((recipe) => (
+                                          <div
+                                            key={recipe.id}
+                                            onClick={() => setSelectedPdfRecipe(recipe)}
+                                            className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-100 dark:border-slate-700/80 shadow-xs hover:shadow-md cursor-pointer hover:border-indigo-100 dark:hover:border-indigo-900/40 transition-all flex flex-col justify-between gap-3 text-left group"
+                                          >
+                                            <div className="space-y-2">
+                                              <div className="flex justify-between items-start">
+                                                <h4 className="text-xs font-bold text-slate-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors line-clamp-1">
+                                                  {recipe.name}
+                                                </h4>
+                                                <span className="text-[9px] bg-slate-50 dark:bg-slate-700/60 text-slate-500 dark:text-slate-400 px-1.5 py-0.5 rounded-md font-bold shrink-0">
+                                                  ⏱️ {recipe.prepTime + recipe.cookTime}m
+                                                </span>
+                                              </div>
+                                              <p className="text-[11px] text-slate-400 line-clamp-2">
+                                                {recipe.steps[0]}
+                                              </p>
+                                            </div>
+                                            
+                                            <div className="flex items-center justify-between border-t pt-2 border-slate-50 dark:border-slate-700/40 text-[10px] font-bold text-indigo-500 dark:text-indigo-400">
+                                              <span>Textura: {recipe.texture.split(" ")[0]}</span>
+                                              <span className="flex items-center gap-0.5 hover:underline group-hover:translate-x-1 duration-200 transition-transform">
+                                                Ver preparación <ChevronRight className="w-3 h-3" />
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>
@@ -1693,7 +3107,13 @@ export default function App() {
 
                         <div>
                           <h3 className="font-display font-bold text-lg text-slate-800 dark:text-white">{activeBaby?.name}</h3>
-                          <p className="text-xs text-slate-400">Fecha de Nacimiento: {activeBaby?.birthDate}</p>
+                          <p className="text-xs text-slate-400">
+                            Fecha de Nacimiento: {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
+                              year: "numeric",
+                              month: "long",
+                              day: "numeric"
+                            }) : "—"}
+                          </p>
                           <span className="inline-block mt-2 text-xs bg-emerald-500 text-white px-3 py-1 rounded-full font-bold">
                             {babyAge.text}
                           </span>
@@ -2008,6 +3428,7 @@ export default function App() {
             {[
               { id: "dashboard", label: "Inicio", icon: Baby, color: "bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-200" },
               { id: "recipes", label: "Recetas", icon: Search, color: "bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border-sky-200" },
+              { id: "pdf-planner", label: "Plan PDF", icon: CalendarDays, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
               { id: "meal-planner", label: "Menú", icon: Calendar, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
               { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
               { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },

@@ -4,8 +4,12 @@
  */
 
 import { Recipe } from "../types";
+import { RECIPES_6M_P1 } from "./recipes_6m_p1";
+import { RECIPES_6M_P2 } from "./recipes_6m_p2";
+import { RECIPES_9M_12M } from "./recipes_9m_12m";
+import { RECIPES_PDF } from "./recipes_pdf";
 
-export const RECIPES_DB: Recipe[] = [
+const ORIGINAL_RECIPES: Recipe[] = [
   // --- 6-8 MESES (PAPILLAS INICIALES) ---
   {
     id: "r_papilla_platano_cremoso",
@@ -772,4 +776,12 @@ export const RECIPES_DB: Recipe[] = [
     category: "merienda",
     attributes: ["sin huevo", "sin leche", "sin gluten", "sin azúcar"]
   }
+];
+
+export const RECIPES_DB: Recipe[] = [
+  ...ORIGINAL_RECIPES,
+  ...RECIPES_6M_P1,
+  ...RECIPES_6M_P2,
+  ...RECIPES_9M_12M,
+  ...RECIPES_PDF
 ];

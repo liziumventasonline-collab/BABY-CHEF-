@@ -8,6 +8,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -31,6 +32,53 @@ function getGeminiClient(): GoogleGenAI {
   return aiClient;
 }
 
+// Persistent activation configuration
+const ACTIVATION_FILE = path.join(process.cwd(), "activation.json");
+
+interface ActivationData {
+  activated: boolean;
+  deviceId: string | null;
+  recoveryKey: string | null;
+  activatedAt: string | null;
+}
+
+function getActivationData(): ActivationData {
+  try {
+    if (fs.existsSync(ACTIVATION_FILE)) {
+      const content = fs.readFileSync(ACTIVATION_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.error("Error al leer el archivo de activación:", err);
+  }
+  return {
+    activated: false,
+    deviceId: null,
+    recoveryKey: null,
+    activatedAt: null
+  };
+}
+
+function saveActivationData(data: ActivationData) {
+  try {
+    fs.writeFileSync(ACTIVATION_FILE, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error al guardar el archivo de activación:", err);
+  }
+}
+
+function generateRecoveryKey(): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let key = "BABYCHEF-";
+  for (let i = 0; i < 4; i++) {
+    for (let j = 0; j < 4; j++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    if (i < 3) key += "-";
+  }
+  return key;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -41,6 +89,86 @@ async function startServer() {
   // API endpoints
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // Verificar estado de activación y si el dispositivo actual está autorizado
+  app.post("/api/verify-device", (req, res) => {
+    const { deviceId } = req.body;
+    if (!deviceId) {
+      return res.status(400).json({ error: "deviceId es obligatorio" });
+    }
+    const data = getActivationData();
+    // Si no está activado aún, cualquier dispositivo está autorizado hasta completar onboarding
+    if (!data.activated) {
+      return res.json({ authorized: true, isActivated: false });
+    }
+    // Si está activado, solo el deviceId registrado es autorizado
+    const authorized = data.deviceId === deviceId;
+    return res.json({ authorized, isActivated: true });
+  });
+
+  // Activar la aplicación (vincula este deviceId como el único dueño)
+  app.post("/api/activate", (req, res) => {
+    const { deviceId } = req.body;
+    if (!deviceId) {
+      return res.status(400).json({ error: "deviceId es obligatorio" });
+    }
+    const data = getActivationData();
+    if (data.activated) {
+      return res.status(400).json({ error: "La aplicación ya está activada y vinculada a otro dispositivo." });
+    }
+    
+    const recoveryKey = generateRecoveryKey();
+    data.activated = true;
+    data.deviceId = deviceId;
+    data.recoveryKey = recoveryKey;
+    data.activatedAt = new Date().toISOString();
+    saveActivationData(data);
+
+    res.json({ success: true, recoveryKey });
+  });
+
+  // Recuperar acceso en caso de pérdida de localStorage usando el código de recuperación
+  app.post("/api/recover", (req, res) => {
+    const { recoveryKey, newDeviceId } = req.body;
+    if (!recoveryKey || !newDeviceId) {
+      return res.status(400).json({ error: "recoveryKey y newDeviceId son obligatorios" });
+    }
+    const data = getActivationData();
+    if (!data.activated) {
+      return res.status(400).json({ error: "La aplicación no ha sido activada aún." });
+    }
+    
+    if (data.recoveryKey === recoveryKey.trim().toUpperCase()) {
+      data.deviceId = newDeviceId;
+      saveActivationData(data);
+      return res.json({ success: true, message: "Dispositivo re-vinculado con éxito." });
+    } else {
+      return res.status(400).json({ success: false, error: "El código de recuperación es incorrecto." });
+    }
+  });
+
+  // Admin reset: permite al vendedor resetear la activación para revender la copia o re-entregarla
+  app.post("/api/admin/reset", (req, res) => {
+    const { masterKey } = req.body;
+    const geminiKey = process.env.GEMINI_API_KEY;
+    
+    if (!masterKey) {
+      return res.status(400).json({ error: "masterKey es obligatorio" });
+    }
+
+    if (masterKey === geminiKey || masterKey === "babychef-master-reset") {
+      const data = {
+        activated: false,
+        deviceId: null,
+        recoveryKey: null,
+        activatedAt: null
+      };
+      saveActivationData(data);
+      return res.json({ success: true, message: "Activación reiniciada con éxito." });
+    } else {
+      return res.status(401).json({ error: "Clave maestra incorrecta." });
+    }
   });
 
   // AI Assistant Proxy

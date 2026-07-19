@@ -105,3 +105,47 @@ export interface GuideArticle {
   summary: string;
   content: string; // Markdown or rich HTML-compatible content
 }
+
+export interface DailyPdfMenu {
+  dayName: string; // "Lunes", "Martes", etc.
+  breakfast: string;
+  lunch: string;
+  dinner: string;
+  snack: string;
+}
+
+export interface WeeklyPdfPlanItem {
+  name: string;
+  quantity?: string;
+  checked?: boolean;
+}
+
+export interface WeeklyPdfShopping {
+  category: string;
+  items: WeeklyPdfPlanItem[];
+}
+
+export interface WeeklyPdfPlan {
+  weekNumber: number;
+  stageTitle: string;
+  weekTitle: string;
+  days: DailyPdfMenu[];
+  shoppingList: WeeklyPdfShopping[];
+}
+
+export interface PdfRecipe {
+  id: string;
+  name: string;
+  ageRange: string;
+  prepTime: number;
+  cookTime: number;
+  servings: number;
+  ingredients: string[];
+  steps: string[];
+  tips: string[];
+  variations?: string[];
+  texture: string;
+  category: "desayuno" | "almuerzo" | "cena" | "merienda" | "acompañamiento" | "lonchera";
+  attributes: string[];
+}
+

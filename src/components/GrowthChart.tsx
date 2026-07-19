@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { GrowthEntry } from "../types";
 import { Scale, Milestone, Activity } from "lucide-react";
+import { parseDateLocal } from "../utils/helpers";
 
 interface GrowthChartProps {
   entries: GrowthEntry[];
@@ -59,8 +60,8 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
 
   // Prepare data for Recharts including WHO standard growth percentiles
   const chartData = sortedEntries.map(entry => {
-    const entryTime = new Date(entry.date).getTime();
-    const birthTime = birthDate ? new Date(birthDate).getTime() : entryTime;
+    const entryTime = parseDateLocal(entry.date).getTime();
+    const birthTime = birthDate ? parseDateLocal(birthDate).getTime() : entryTime;
     const ageMonths = Math.max(0, (entryTime - birthTime) / (1000 * 60 * 60 * 24 * 30.4375));
 
     // Dynamic standard formula fits (WHO-based)
@@ -83,7 +84,7 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
     const headP85 = parseFloat((hcRef * 1.04).toFixed(1));
 
     return {
-      date: new Date(entry.date).toLocaleDateString("es-ES", {
+      date: parseDateLocal(entry.date).toLocaleDateString("es-ES", {
         month: "short",
         day: "numeric"
       }),
