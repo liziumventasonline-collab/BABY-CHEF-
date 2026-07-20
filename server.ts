@@ -117,6 +117,17 @@ async function startServer() {
   // Middleware to parse JSON
   app.use(express.json());
 
+  // Enable CORS for external hosting like Vercel
+  app.use((req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // API endpoints
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });

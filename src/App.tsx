@@ -75,6 +75,45 @@ import {
 import GrowthChart from "./components/GrowthChart";
 import RecipeTimer from "./components/RecipeTimer";
 
+// Define API backend base URL depending on deployment hostname.
+// If it's running on Vercel or other client-only hosting, it points back to our active Cloud Run container.
+const API_BASE_URL = window.location.hostname.includes("localhost") || window.location.hostname.includes("run.app")
+  ? ""
+  : "https://ais-pre-6itwh7jwqqh5rbpe7dtmvb-207077582813.us-east1.run.app";
+
+// Helper helper function to abstract secure JSON fetch operations with our backend, supporting cross-domain requests
+const apiFetch = async (endpoint: string, options: RequestInit = {}) => {
+  const url = API_BASE_URL + endpoint;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  });
+  
+  if (!res.ok) {
+    let errMsg = `Error de servidor (${res.status})`;
+    try {
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        const errData = await res.json();
+        if (errData && errData.error) errMsg = errData.error;
+      }
+    } catch (e) {
+      // ignore
+    }
+    throw new Error(errMsg);
+  }
+  
+  const contentType = res.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    throw new Error("Respuesta inválida del servidor (se recibió HTML en vez de JSON). Por favor, comprueba que el servidor esté activo.");
+  }
+  
+  return await res.json();
+};
+
 // Initial Mock/Standard Data to feel alive instantly
 const DEFAULT_BABY: BabyProfile = {
   id: "b1",
@@ -280,33 +319,25 @@ export default function App() {
       try {
         // If there's an email already saved in localStorage
         if (clientEmail) {
-          const res = await fetch("/api/check-email", {
+          const data = await apiFetch("/api/check-email", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: clientEmail, deviceId })
           });
           
-          if (res.ok) {
-            const data = await res.json();
-            if (data.authorized) {
-              localStorage.setItem("babychef_is_authorized", "true");
-              setIsAuthorized(true);
-              setIsActivated(true);
-              setEmailStatus("authorized");
-            } else if (data.status === "pending") {
-              setIsAuthorized(false);
-              setEmailStatus("pending");
-            } else if (data.status === "authorized" && !data.isDeviceMatched) {
-              setIsAuthorized(false);
-              setEmailStatus("device_mismatch");
-            } else {
-              setIsAuthorized(false);
-              setEmailStatus("not_found");
-            }
-          } else {
-            // Server error
+          if (data.authorized) {
+            localStorage.setItem("babychef_is_authorized", "true");
+            setIsAuthorized(true);
+            setIsActivated(true);
+            setEmailStatus("authorized");
+          } else if (data.status === "pending") {
             setIsAuthorized(false);
-            setEmailStatus("error");
+            setEmailStatus("pending");
+          } else if (data.status === "authorized" && !data.isDeviceMatched) {
+            setIsAuthorized(false);
+            setEmailStatus("device_mismatch");
+          } else {
+            setIsAuthorized(false);
+            setEmailStatus("not_found");
           }
         } else {
           // No email registered yet on this client device
@@ -339,31 +370,25 @@ export default function App() {
     setIsSubmittingEmail(true);
     
     try {
-      const res = await fetch("/api/register-email", {
+      const data = await apiFetch("/api/register-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: emailInput.trim(), deviceId })
       });
       
-      const data = await res.json();
-      if (res.ok) {
-        const normalized = emailInput.trim().toLowerCase();
-        localStorage.setItem("babychef_client_email", normalized);
-        setClientEmail(normalized);
-        
-        if (data.status === "authorized") {
-          localStorage.setItem("babychef_is_authorized", "true");
-          setIsAuthorized(true);
-          setEmailStatus("authorized");
-        } else {
-          setIsAuthorized(false);
-          setEmailStatus("pending");
-        }
+      const normalized = emailInput.trim().toLowerCase();
+      localStorage.setItem("babychef_client_email", normalized);
+      setClientEmail(normalized);
+      
+      if (data.status === "authorized") {
+        localStorage.setItem("babychef_is_authorized", "true");
+        setIsAuthorized(true);
+        setEmailStatus("authorized");
       } else {
-        setEmailError(data.error || "Ocurrió un error al registrar el correo.");
+        setIsAuthorized(false);
+        setEmailStatus("pending");
       }
-    } catch (err) {
-      setEmailError("Error de red. Por favor, revisa tu conexión a Internet.");
+    } catch (err: any) {
+      setEmailError(err.message || "Error de red. Por favor, revisa tu conexión a Internet.");
     } finally {
       setIsSubmittingEmail(false);
     }
@@ -373,24 +398,20 @@ export default function App() {
     if (!clientEmail) return;
     setIsVerifyingDevice(true);
     try {
-      const res = await fetch("/api/check-email", {
+      const data = await apiFetch("/api/check-email", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: clientEmail, deviceId })
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.authorized) {
-          localStorage.setItem("babychef_is_authorized", "true");
-          setIsAuthorized(true);
-          setEmailStatus("authorized");
-        } else if (data.status === "pending") {
-          setEmailStatus("pending");
-        } else if (data.status === "authorized" && !data.isDeviceMatched) {
-          setEmailStatus("device_mismatch");
-        } else {
-          setEmailStatus("not_found");
-        }
+      if (data.authorized) {
+        localStorage.setItem("babychef_is_authorized", "true");
+        setIsAuthorized(true);
+        setEmailStatus("authorized");
+      } else if (data.status === "pending") {
+        setEmailStatus("pending");
+      } else if (data.status === "authorized" && !data.isDeviceMatched) {
+        setEmailStatus("device_mismatch");
+      } else {
+        setEmailStatus("not_found");
       }
     } catch (e) {
       console.error(e);
@@ -414,33 +435,26 @@ export default function App() {
     e.preventDefault();
     setAdminError("");
     try {
-      const res = await fetch("/api/admin/registrations", {
+      const data = await apiFetch("/api/admin/registrations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           adminEmail: adminEmailInput.trim(), 
           masterKey: adminPasswordInput.trim() 
         })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setIsAdminLoggedIn(true);
-        setAdminRegistrations(data.registrations || []);
-        setAdminSuccessMessage("Sesión de administrador iniciada con éxito.");
-        setTimeout(() => setAdminSuccessMessage(""), 3000);
-      } else {
-        setAdminError(data.error || "Credenciales incorrectas.");
-      }
-    } catch (err) {
-      setAdminError("Error de red al iniciar sesión.");
+      setIsAdminLoggedIn(true);
+      setAdminRegistrations(data.registrations || []);
+      setAdminSuccessMessage("Sesión de administrador iniciada con éxito.");
+      setTimeout(() => setAdminSuccessMessage(""), 3000);
+    } catch (err: any) {
+      setAdminError(err.message || "Error de red al iniciar sesión.");
     }
   };
 
   const handleAdminUpdateStatus = async (targetEmail: string, action: string) => {
     try {
-      const res = await fetch("/api/admin/update-registration", {
+      const data = await apiFetch("/api/admin/update-registration", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           adminEmail: "liziumventasonline@gmail.com",
           masterKey: adminPasswordInput.trim(),
@@ -448,16 +462,11 @@ export default function App() {
           action
         })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setAdminRegistrations(data.registrations || []);
-        setAdminSuccessMessage(`Cliente actualizado: acción '${action}' exitosa.`);
-        setTimeout(() => setAdminSuccessMessage(""), 3000);
-      } else {
-        alert(data.error || "Ocurrió un error.");
-      }
-    } catch (err) {
-      alert("Error al conectar con el servidor.");
+      setAdminRegistrations(data.registrations || []);
+      setAdminSuccessMessage(`Cliente actualizado: acción '${action}' exitosa.`);
+      setTimeout(() => setAdminSuccessMessage(""), 3000);
+    } catch (err: any) {
+      alert(err.message || "Error al conectar con el servidor.");
     }
   };
 
@@ -465,9 +474,8 @@ export default function App() {
     e.preventDefault();
     if (!adminNewClientEmail.trim()) return;
     try {
-      const res = await fetch("/api/admin/update-registration", {
+      const data = await apiFetch("/api/admin/update-registration", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           adminEmail: "liziumventasonline@gmail.com",
           masterKey: adminPasswordInput.trim(),
@@ -475,17 +483,12 @@ export default function App() {
           action: "add"
         })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setAdminRegistrations(data.registrations || []);
-        setAdminNewClientEmail("");
-        setAdminSuccessMessage("Cliente registrado y autorizado exitosamente.");
-        setTimeout(() => setAdminSuccessMessage(""), 3000);
-      } else {
-        alert(data.error || "Ocurrió un error.");
-      }
-    } catch (err) {
-      alert("Error al conectar con el servidor.");
+      setAdminRegistrations(data.registrations || []);
+      setAdminNewClientEmail("");
+      setAdminSuccessMessage("Cliente registrado y autorizado exitosamente.");
+      setTimeout(() => setAdminSuccessMessage(""), 3000);
+    } catch (err: any) {
+      alert(err.message || "Error al conectar con el servidor.");
     }
   };
 
@@ -497,25 +500,19 @@ export default function App() {
     setRecoverySuccess(false);
 
     try {
-      const res = await fetch("/api/recover", {
+      const data = await apiFetch("/api/recover", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recoveryKey: recoveryInput.trim(), newDeviceId: deviceId })
       });
-      const data = await res.json();
-      if (res.ok) {
-        setRecoverySuccess(true);
-        setTimeout(() => {
-          setIsAuthorized(true);
-          setIsActivated(true);
-          setRecoveryInput("");
-          setRecoverySuccess(false);
-        }, 1500);
-      } else {
-        setRecoveryError(data.error || "Código incorrecto o inválido.");
-      }
-    } catch (err) {
-      setRecoveryError("Error de red. Asegúrate de estar conectado.");
+      setRecoverySuccess(true);
+      setTimeout(() => {
+        setIsAuthorized(true);
+        setIsActivated(true);
+        setRecoveryInput("");
+        setRecoverySuccess(false);
+      }, 1500);
+    } catch (err: any) {
+      setRecoveryError(err.message || "Error de red. Asegúrate de estar conectado.");
     }
   };
 
@@ -813,20 +810,11 @@ export default function App() {
 
     try {
       // Activar copia en el servidor para vincular este dispositivo
-      const actRes = await fetch("/api/activate", {
+      const actData = await apiFetch("/api/activate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ deviceId })
       });
       
-      if (!actRes.ok) {
-        // Si el servidor explícitamente indica que ya está registrado por otro dispositivo
-        setIsAuthorized(false);
-        setIsActivated(true);
-        return;
-      }
-
-      const actData = await actRes.json();
       if (actData && actData.recoveryKey) {
         localStorage.setItem("babychef_recovery_key", actData.recoveryKey);
       }
@@ -1003,8 +991,21 @@ export default function App() {
                 </button>
               </form>
 
-              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
-                Si aún no has adquirido tu copia oficial, puedes contactarnos haciendo clic en el enlace inferior.
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Si aún no has adquirido tu versión original, puedes contactarnos haciendo clic en el botón de abajo:
+                </p>
+                <a
+                  href="https://wa.link/gwr63q"
+                  target="_blank"
+                  referrerPolicy="no-referrer"
+                  className="inline-flex w-full items-center justify-center gap-2 py-3 px-5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-extrabold transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-[0.98] cursor-pointer"
+                >
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+                  </svg>
+                  <span>Adquirir Versión Original</span>
+                </a>
               </div>
             </div>
           )}
