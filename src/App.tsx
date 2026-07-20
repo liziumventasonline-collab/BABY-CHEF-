@@ -199,6 +199,12 @@ export default function App() {
   const [emailError, setEmailError] = useState<string>("");
   const [isSubmittingEmail, setIsSubmittingEmail] = useState<boolean>(false);
 
+  // States for manual code insertion
+  const [manualCode, setManualCode] = useState<string>("");
+  const [manualError, setManualError] = useState<string>("");
+  const [isVerifyingManual, setIsVerifyingManual] = useState<boolean>(false);
+  const [adminClicks, setAdminClicks] = useState<number>(0);
+
   // Admin Panel States
   const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
   const [adminEmailInput, setAdminEmailInput] = useState<string>("");
@@ -398,6 +404,64 @@ export default function App() {
     };
     checkUrlAuth();
   }, [deviceId]);
+
+  // --- Manual Access Submission ---
+  const handleManualAccessSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!manualCode.trim()) return;
+
+    setManualError("");
+    setIsVerifyingManual(true);
+
+    try {
+      let parsedKey = manualCode.trim();
+      
+      // Extract code if they paste a URL or query string containing "?"
+      if (parsedKey.includes("?")) {
+        const queryStr = parsedKey.substring(parsedKey.indexOf("?"));
+        const urlParams = new URLSearchParams(queryStr);
+        const paramKeys = ["acceso", "token", "key", "code", "licencia", "access"];
+        for (const pKey of paramKeys) {
+          if (urlParams.has(pKey)) {
+            parsedKey = urlParams.get(pKey) || parsedKey;
+            break;
+          }
+        }
+      } else if (parsedKey.includes("=")) {
+        // Handle "acceso=maria123" format
+        const parts = parsedKey.split("=");
+        parsedKey = parts[parts.length - 1].trim();
+      }
+
+      // Convert to clean lowercased string
+      parsedKey = parsedKey.trim().toLowerCase();
+
+      if (!parsedKey) {
+        setManualError("No se pudo detectar un código válido en el texto ingresado.");
+        setIsVerifyingManual(false);
+        return;
+      }
+
+      // Call the API endpoint to claim access
+      const data = await apiFetch("/api/claim-access", {
+        method: "POST",
+        body: JSON.stringify({ key: parsedKey, deviceId })
+      });
+
+      if (data && data.authorized) {
+        localStorage.setItem("babychef_is_authorized", "true");
+        localStorage.setItem("babychef_access_key", parsedKey);
+        setIsAuthorized(true);
+      } else {
+        setManualError(data.error || "El código ingresado es inválido o ya está en uso.");
+      }
+    } catch (err: any) {
+      console.error("Error verifying manual key:", err);
+      setManualError(err.message || "Error al validar tu acceso. Asegúrate de tener conexión a Internet.");
+    } finally {
+      setIsVerifyingManual(false);
+    }
+  };
 
   // --- Admin Logic ---
   const handleAdminLogin = async (e: FormEvent) => {
@@ -895,55 +959,111 @@ export default function App() {
   if (isAuthorized === false) {
     return (
       <div className="min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
-        <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-6 animate-in fade-in zoom-in duration-300">
+        <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-5 animate-in fade-in zoom-in duration-300">
           
-          {/* Admin Access hidden shortcut button in top right corner */}
-          <button 
-            onClick={() => {
-              setAdminEmailInput("liziumventasonline@gmail.com");
-              setShowAdminModal(true);
-            }} 
-            className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-            title="Administración"
-          >
-            <Key className="w-4 h-4" />
-          </button>
-
-          <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="space-y-4 animate-in fade-in duration-300">
             <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm animate-pulse">
-              ⚠💔
+              👶🔑
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h2 className="font-display font-extrabold text-xl text-rose-600">
-                ¡No cuentas con la versión original! 💔
+                ¡Ingresa tu Código de Acceso!
               </h2>
-              <p className="text-xs text-slate-500 leading-relaxed px-4">
-                Este enlace de acceso ya ha sido activado en otro dispositivo o ha sido compartido/reenviado de forma no autorizada. Cada licencia original de <strong>BabyChef</strong> es para uso personal y exclusivo de un solo teléfono móvil.
+              <p className="text-xs text-slate-500 leading-relaxed px-2">
+                Esta es una versión exclusiva de <strong>BabyChef</strong>. Para ingresar por primera vez, escribe tu código de acceso o pega aquí el enlace original completo que te enviamos.
               </p>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 space-y-3.5">
-              <p className="text-xs text-slate-500 font-medium leading-normal px-2">
-                Para adquirir tu propia versión original con tu recetario completo, planificador semanal y asistente con Inteligencia Artificial, contáctanos haciendo clic en el botón de abajo:
+            {/* Manual Code / Link Input Form */}
+            <form onSubmit={handleManualAccessSubmit} className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 space-y-3">
+              <label className="block text-left text-[11px] font-bold text-slate-600">
+                Enlace completo o código de acceso:
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  required
+                  placeholder="Pega el enlace original o escribe tu código..."
+                  value={manualCode}
+                  onChange={(e) => setManualCode(e.target.value)}
+                  className="w-full text-xs py-3 pl-3 pr-10 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-rose-400 focus:border-rose-400 text-slate-800"
+                />
+                <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Key className="w-4 h-4" />
+                </div>
+              </div>
+              
+              {manualError && (
+                <p className="text-[10px] font-semibold text-rose-500 text-left bg-rose-50 p-2.5 rounded-xl border border-rose-100 leading-snug">
+                  ⚠ {manualError}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="submit"
+                  disabled={isVerifyingManual}
+                  className="w-full py-3 px-2.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 disabled:from-slate-300 disabled:to-slate-400 text-white font-extrabold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-[0.98]"
+                >
+                  {isVerifyingManual ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Validando...</span>
+                    </>
+                  ) : (
+                    <span>Confirmar 🔑</span>
+                  )}
+                </button>
+
+                <a
+                  href="https://wa.link/gwr63q?text=Hola!%20Por%20favor%20bríndame%20mi%20código%20de%20acceso%20para%20BabyChef"
+                  target="_blank"
+                  referrerPolicy="no-referrer"
+                  className="w-full py-3 px-2.5 bg-[#25D366] hover:bg-[#20ba5a] text-white font-extrabold text-[11px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm active:scale-[0.98] text-center"
+                >
+                  <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+                  </svg>
+                  <span>Pedir Código 💬</span>
+                </a>
+              </div>
+            </form>
+
+            <div className="pt-2 border-t border-slate-100 space-y-2.5">
+              <p className="text-[11px] text-slate-400 font-medium leading-normal px-2">
+                Si aún no has adquirido tu versión original, puedes contactarnos y solicitar tu enlace oficial haciendo clic en el botón de abajo:
               </p>
               
               <a
                 href="https://wa.link/gwr63q"
                 target="_blank"
                 referrerPolicy="no-referrer"
-                className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.01] shadow-lg shadow-emerald-500/20 active:scale-[0.99] cursor-pointer"
+                className="inline-flex w-full items-center justify-center gap-2.5 py-3.5 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-extrabold transition-all duration-200 transform hover:scale-[1.01] shadow-md shadow-emerald-500/10 active:scale-[0.99] cursor-pointer"
               >
-                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                   <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
                 </svg>
-                <span>Adquirir Versión Original</span>
+                <span>Adquirir Licencia en WhatsApp</span>
               </a>
             </div>
           </div>
 
           {/* SHARED FOOTER FOR ACCREDITED LICENSING */}
-          <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
+          <div 
+            onClick={() => {
+              setAdminClicks(prev => {
+                const next = prev + 1;
+                if (next >= 5) {
+                  setAdminEmailInput("liziumventasonline@gmail.com");
+                  setShowAdminModal(true);
+                  return 0;
+                }
+                return next;
+              });
+            }}
+            className="pt-3 border-t border-slate-100 text-[10px] text-slate-400 leading-normal cursor-default select-none hover:text-slate-500 active:text-slate-600 transition-colors"
+          >
             Licencia individual BabyChef. Todos los derechos reservados.
           </div>
         </div>
