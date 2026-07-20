@@ -152,6 +152,25 @@ export default function App() {
   const [recoveryError, setRecoveryError] = useState<string>("");
   const [recoverySuccess, setRecoverySuccess] = useState<boolean>(false);
   const [isVerifyingDevice, setIsVerifyingDevice] = useState<boolean>(true);
+
+  // --- NEW EMAIL AUTHORIZATION SYSTEM STATES ---
+  const [clientEmail, setClientEmail] = useState<string>(() => localStorage.getItem("babychef_client_email") || "");
+  const [emailStatus, setEmailStatus] = useState<"pending" | "authorized" | "not_found" | "device_mismatch" | "checking" | "error">("checking");
+  const [emailInput, setEmailInput] = useState<string>("");
+  const [emailError, setEmailError] = useState<string>("");
+  const [isSubmittingEmail, setIsSubmittingEmail] = useState<boolean>(false);
+
+  // Admin Panel States
+  const [showAdminModal, setShowAdminModal] = useState<boolean>(false);
+  const [adminEmailInput, setAdminEmailInput] = useState<string>("");
+  const [adminPasswordInput, setAdminPasswordInput] = useState<string>("");
+  const [adminError, setAdminError] = useState<string>("");
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(false);
+  const [adminRegistrations, setAdminRegistrations] = useState<any[]>([]);
+  const [adminNewClientEmail, setAdminNewClientEmail] = useState<string>("");
+  const [adminNewClientStatus, setAdminNewClientStatus] = useState<"authorized" | "pending">("authorized");
+  const [adminSuccessMessage, setAdminSuccessMessage] = useState<string>("");
+  const [adminQuery, setAdminQuery] = useState<string>("");
   const [activePdfWeek, setActivePdfWeek] = useState<number>(1);
   const [pdfPlannerSubTab, setPdfPlannerSubTab] = useState<"plan" | "recetarios">("plan");
   const [pdfBookAge, setPdfBookAge] = useState<"9-12" | "12-18" | "18-24">("9-12");
@@ -257,26 +276,218 @@ export default function App() {
 
   // --- LocalStorage Synchronization & Setup ---
   useEffect(() => {
-    const checkDevice = async () => {
+    const checkEmailAuth = async () => {
       try {
-        const res = await fetch("/api/verify-device", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId })
-        });
-        const data = await res.json();
-        setIsAuthorized(!!data.authorized);
-        setIsActivated(!!data.isActivated);
+        // If there's an email already saved in localStorage
+        if (clientEmail) {
+          const res = await fetch("/api/check-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: clientEmail, deviceId })
+          });
+          
+          if (res.ok) {
+            const data = await res.json();
+            if (data.authorized) {
+              localStorage.setItem("babychef_is_authorized", "true");
+              setIsAuthorized(true);
+              setIsActivated(true);
+              setEmailStatus("authorized");
+            } else if (data.status === "pending") {
+              setIsAuthorized(false);
+              setEmailStatus("pending");
+            } else if (data.status === "authorized" && !data.isDeviceMatched) {
+              setIsAuthorized(false);
+              setEmailStatus("device_mismatch");
+            } else {
+              setIsAuthorized(false);
+              setEmailStatus("not_found");
+            }
+          } else {
+            // Server error
+            setIsAuthorized(false);
+            setEmailStatus("error");
+          }
+        } else {
+          // No email registered yet on this client device
+          setIsAuthorized(false);
+          setEmailStatus("not_found");
+        }
       } catch (err) {
-        console.error("Error al verificar el dispositivo:", err);
-        // Si hay error de red, asumimos autorizado para que no quede inaccesible sin internet localmente
-        setIsAuthorized(true);
+        console.error("Error al verificar autorización de correo:", err);
+        // Fallback for offline support if they were already onboarded successfully
+        const onboarded = localStorage.getItem("babychef_onboarded") === "true";
+        if (onboarded && clientEmail) {
+          setIsAuthorized(true);
+          setEmailStatus("authorized");
+        } else {
+          setIsAuthorized(false);
+          setEmailStatus("error");
+        }
       } finally {
         setIsVerifyingDevice(false);
       }
     };
-    checkDevice();
-  }, [deviceId]);
+    checkEmailAuth();
+  }, [clientEmail, deviceId]);
+
+  const handleRegisterEmailSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!emailInput.trim()) return;
+    
+    setEmailError("");
+    setIsSubmittingEmail(true);
+    
+    try {
+      const res = await fetch("/api/register-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailInput.trim(), deviceId })
+      });
+      
+      const data = await res.json();
+      if (res.ok) {
+        const normalized = emailInput.trim().toLowerCase();
+        localStorage.setItem("babychef_client_email", normalized);
+        setClientEmail(normalized);
+        
+        if (data.status === "authorized") {
+          localStorage.setItem("babychef_is_authorized", "true");
+          setIsAuthorized(true);
+          setEmailStatus("authorized");
+        } else {
+          setIsAuthorized(false);
+          setEmailStatus("pending");
+        }
+      } else {
+        setEmailError(data.error || "Ocurrió un error al registrar el correo.");
+      }
+    } catch (err) {
+      setEmailError("Error de red. Por favor, revisa tu conexión a Internet.");
+    } finally {
+      setIsSubmittingEmail(false);
+    }
+  };
+
+  const handleVerifyEmailStatus = async () => {
+    if (!clientEmail) return;
+    setIsVerifyingDevice(true);
+    try {
+      const res = await fetch("/api/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: clientEmail, deviceId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authorized) {
+          localStorage.setItem("babychef_is_authorized", "true");
+          setIsAuthorized(true);
+          setEmailStatus("authorized");
+        } else if (data.status === "pending") {
+          setEmailStatus("pending");
+        } else if (data.status === "authorized" && !data.isDeviceMatched) {
+          setEmailStatus("device_mismatch");
+        } else {
+          setEmailStatus("not_found");
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsVerifyingDevice(false);
+    }
+  };
+
+  // Log Out / Change Email (lets clients switch email if they typed it wrong)
+  const handleChangeEmail = () => {
+    localStorage.removeItem("babychef_client_email");
+    localStorage.removeItem("babychef_is_authorized");
+    setClientEmail("");
+    setEmailStatus("not_found");
+    setIsAuthorized(false);
+    setEmailInput("");
+  };
+
+  // --- Admin Logic ---
+  const handleAdminLogin = async (e: FormEvent) => {
+    e.preventDefault();
+    setAdminError("");
+    try {
+      const res = await fetch("/api/admin/registrations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          adminEmail: adminEmailInput.trim(), 
+          masterKey: adminPasswordInput.trim() 
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setIsAdminLoggedIn(true);
+        setAdminRegistrations(data.registrations || []);
+        setAdminSuccessMessage("Sesión de administrador iniciada con éxito.");
+        setTimeout(() => setAdminSuccessMessage(""), 3000);
+      } else {
+        setAdminError(data.error || "Credenciales incorrectas.");
+      }
+    } catch (err) {
+      setAdminError("Error de red al iniciar sesión.");
+    }
+  };
+
+  const handleAdminUpdateStatus = async (targetEmail: string, action: string) => {
+    try {
+      const res = await fetch("/api/admin/update-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminEmail: "liziumventasonline@gmail.com",
+          masterKey: adminPasswordInput.trim(),
+          clientEmail: targetEmail,
+          action
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminRegistrations(data.registrations || []);
+        setAdminSuccessMessage(`Cliente actualizado: acción '${action}' exitosa.`);
+        setTimeout(() => setAdminSuccessMessage(""), 3000);
+      } else {
+        alert(data.error || "Ocurrió un error.");
+      }
+    } catch (err) {
+      alert("Error al conectar con el servidor.");
+    }
+  };
+
+  const handleAdminAddClientSubmit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!adminNewClientEmail.trim()) return;
+    try {
+      const res = await fetch("/api/admin/update-registration", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminEmail: "liziumventasonline@gmail.com",
+          masterKey: adminPasswordInput.trim(),
+          clientEmail: adminNewClientEmail.trim(),
+          action: "add"
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAdminRegistrations(data.registrations || []);
+        setAdminNewClientEmail("");
+        setAdminSuccessMessage("Cliente registrado y autorizado exitosamente.");
+        setTimeout(() => setAdminSuccessMessage(""), 3000);
+      } else {
+        alert(data.error || "Ocurrió un error.");
+      }
+    } catch (err) {
+      alert("Error al conectar con el servidor.");
+    }
+  };
 
   const handleRecoverAccess = async (e: FormEvent) => {
     e.preventDefault();
@@ -655,6 +866,7 @@ export default function App() {
 
     // Guardar estado en localStorage
     localStorage.setItem("babychef_onboarded", "true");
+    localStorage.setItem("babychef_is_authorized", "true");
     setIsAuthorized(true);
     setIsActivated(true);
     setShowOnboarding(false);
@@ -727,84 +939,485 @@ export default function App() {
     return (
       <div className="min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
         <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-6 animate-in fade-in zoom-in duration-300">
-          <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
-            <Lock className="w-10 h-10" />
-          </div>
+          
+          {/* Admin Access hidden shortcut button in top right corner */}
+          <button 
+            onClick={() => {
+              setAdminEmailInput("liziumventasonline@gmail.com");
+              setShowAdminModal(true);
+            }} 
+            className="absolute top-4 right-4 p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+            title="Administración"
+          >
+            <Key className="w-4 h-4" />
+          </button>
 
-          <div className="space-y-3">
-            <h2 className="font-display font-extrabold text-2xl text-slate-800">
-              ¡Hola, Familia! 👶✨
-            </h2>
-            <p className="text-sm font-semibold text-rose-500 leading-relaxed px-2">
-              Error, contactate al servidor para adquirir tu acceso y disfrutar de todos los beneficios de baby chef
-            </p>
-          </div>
-
-          <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
-            <p className="font-bold text-slate-700 flex items-center gap-1.5">
-              <ShieldAlert className="w-4 h-4 text-amber-500" />
-              ¿Por qué veo esto?
-            </p>
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              Para garantizar el uso personal del recetario y evitar la distribución no autorizada de este enlace, la licencia se asocia automáticamente al primer dispositivo que inicia sesión.
-            </p>
-          </div>
-
-          {/* WhatsApp Direct Link Button */}
-          <div className="pt-2">
-            <a
-              href="https://wa.link/gwr63q"
-              target="_blank"
-              referrerPolicy="no-referrer"
-              className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-2xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
-            >
-              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
-              </svg>
-              <span>Adquirir Acceso en WhatsApp</span>
-            </a>
-          </div>
-
-          {/* Optional sub-accordion for recovery key in case user cleared cache but has key */}
-          <details className="text-left select-none group">
-            <summary className="text-[10px] text-slate-400 hover:text-slate-500 cursor-pointer text-center list-none outline-none">
-              ¿Ya habías comprado y borraste tu historial? <span className="underline group-open:hidden">Reactivar</span><span className="underline hidden group-open:inline">Ocultar</span>
-            </summary>
-            <form onSubmit={handleRecoverAccess} className="space-y-2 mt-2 pt-2 border-t border-dashed border-slate-200 animate-in fade-in duration-200">
-              <p className="text-[10px] text-slate-500 leading-normal">
-                Ingresa tu Código de Recuperación original que se generó al activar tu cuenta:
-              </p>
-              <div className="relative flex items-center">
-                <Key className="absolute left-2.5 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="BABYCHEF-XXXX-XXXX"
-                  value={recoveryInput}
-                  onChange={e => setRecoveryInput(e.target.value)}
-                  className="w-full text-[11px] pl-8 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-pink-400 text-slate-800 font-mono"
-                  required
-                />
+          {/* SCREEN 1: EMAIL REGISTRATION NOT FOUND / REGISTER SCREEN */}
+          {emailStatus === "not_found" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="w-20 h-20 bg-pink-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-pink-100 text-pink-500 shadow-sm">
+                👶✨
               </div>
-              {recoveryError && (
-                <p className="text-[10px] font-bold text-rose-500 pl-1">{recoveryError}</p>
-              )}
-              {recoverySuccess && (
-                <p className="text-[10px] font-bold text-emerald-600 pl-1">✓ Código correcto. Vinculando nuevo dispositivo...</p>
-              )}
-              <button
-                type="submit"
-                className="w-full py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <RefreshCw className="w-3 h-3" />
-                <span>Verificar y Reactivar Acceso</span>
-              </button>
-            </form>
-          </details>
 
+              <div className="space-y-3">
+                <h2 className="font-display font-extrabold text-2xl text-slate-800">
+                  ¡Te damos la bienvenida! 💕
+                </h2>
+                <p className="text-xs text-slate-500 leading-relaxed px-4">
+                  Para acceder a tu recetario oficial de BabyChef, planificadores semanales y asistente con Inteligencia Artificial, introduce tu correo de registro.
+                </p>
+              </div>
+
+              <form onSubmit={handleRegisterEmailSubmit} className="space-y-3.5 text-left">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 pl-1">
+                    Correo Electrónico de Registro
+                  </label>
+                  <div className="relative flex items-center">
+                    <User className="absolute left-3 w-4 h-4 text-slate-400" />
+                    <input
+                      type="email"
+                      required
+                      placeholder="ejemplo@correo.com"
+                      value={emailInput}
+                      onChange={e => setEmailInput(e.target.value)}
+                      className="w-full text-xs pl-9 pr-3 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 text-slate-800 shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                {emailError && (
+                  <p className="text-[11px] font-bold text-rose-500 pl-1">⚠ {emailError}</p>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={isSubmittingEmail}
+                  className="w-full py-3.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-pink-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
+                >
+                  {isSubmittingEmail ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <span>Registrar y Verificar Acceso</span>
+                  )}
+                </button>
+              </form>
+
+              <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
+                Si aún no has adquirido tu copia oficial, puedes contactarnos haciendo clic en el enlace inferior.
+              </div>
+            </div>
+          )}
+
+          {/* SCREEN 2: EMAIL IS PENDING AUTHORIZATION FROM THE ADMIN */}
+          {emailStatus === "pending" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-amber-100 text-amber-500 shadow-sm animate-pulse">
+                ⏳
+              </div>
+
+              <div className="space-y-3">
+                <h2 className="font-display font-extrabold text-2xl text-slate-800">
+                  ¡Registro Recibido! 🍼
+                </h2>
+                <p className="text-xs text-slate-600 font-semibold px-2 bg-amber-50 border border-amber-100/60 py-2 rounded-xl inline-block max-w-full truncate">
+                  {clientEmail}
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed px-2">
+                  Tu correo electrónico está registrado, pero **aún requiere ser autorizado** por el administrador para desbloquear los beneficios.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
+                <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-500" />
+                  ¿Cómo activar mi cuenta?
+                </p>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Haz clic en el botón de abajo para enviar un mensaje directo de WhatsApp a nuestro equipo de ventas. En menos de un minuto autorizaremos tu correo y podrás disfrutar de BabyChef.
+                </p>
+              </div>
+
+              {/* WhatsApp Direct Link Button with custom query content */}
+              <div className="space-y-3 pt-2">
+                <a
+                  href={`https://api.whatsapp.com/send?phone=59175323113&text=Hola,%20acabo%20de%20registrar%20mi%20correo%20en%20BabyChef:%20${encodeURIComponent(clientEmail)}.%20Por%20favor,%20¿podrías%20autorizar%20mi%20acceso?`}
+                  target="_blank"
+                  referrerPolicy="no-referrer"
+                  className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+                  </svg>
+                  <span>Solicitar Autorización vía WhatsApp</span>
+                </a>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleVerifyEmailStatus}
+                    className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Ya fui autorizado</span>
+                  </button>
+                  <button
+                    onClick={handleChangeEmail}
+                    className="py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Cambiar correo</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SCREEN 3: DEVICE COUPLING LOCK / DEVICE MISMATCH */}
+          {emailStatus === "device_mismatch" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
+                <Lock className="w-10 h-10" />
+              </div>
+
+              <div className="space-y-3">
+                <h2 className="font-display font-extrabold text-2xl text-slate-800">
+                  ¡Cuenta Vinculada! 🔒
+                </h2>
+                <p className="text-xs text-rose-600 font-semibold px-2 bg-rose-50 border border-rose-100/60 py-2 rounded-xl inline-block max-w-full truncate">
+                  {clientEmail}
+                </p>
+                <p className="text-xs text-slate-500 leading-relaxed px-2">
+                  Este correo electrónico ya está activo en otro dispositivo móvil. Por motivos de seguridad y evitar la distribución no autorizada, cada licencia es para uso exclusivo de **un solo dispositivo activo**.
+                </p>
+              </div>
+
+              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
+                <p className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <ShieldAlert className="w-4 h-4 text-amber-500" />
+                  ¿Cambiaste de teléfono celular?
+                </p>
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  Si adquiriste un teléfono celular nuevo o borraste tu historial, por favor solicita un reinicio de dispositivo al administrador para autorizar tu acceso en este nuevo móvil.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <a
+                  href={`https://api.whatsapp.com/send?phone=59175323113&text=Hola!%20Por%20favor%20necesito%20restablecer%20el%20dispositivo%20de%20mi%20cuenta%20con%20correo:%20${encodeURIComponent(clientEmail)}.`}
+                  target="_blank"
+                  referrerPolicy="no-referrer"
+                  className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
+                >
+                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+                  </svg>
+                  <span>Solicitar Cambio de Celular</span>
+                </a>
+
+                <button
+                  onClick={handleChangeEmail}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Usar otro correo</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* SCREEN 4: SERVER CONNECTION ERROR OR OFFLINE */}
+          {emailStatus === "error" && (
+            <div className="space-y-6 animate-in fade-in duration-300">
+              <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
+                🛜
+              </div>
+
+              <div className="space-y-3">
+                <h2 className="font-display font-extrabold text-2xl text-slate-800">
+                  Problema de Conexión
+                </h2>
+                <p className="text-xs text-slate-500 leading-relaxed px-4">
+                  No pudimos conectar con el servidor para validar tu licencia. Por favor, asegúrate de estar conectado a Internet y vuelve a intentarlo.
+                </p>
+              </div>
+
+              <button
+                onClick={handleVerifyEmailStatus}
+                className="w-full py-3.5 bg-pink-500 hover:bg-pink-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                <span>Reintentar Conexión</span>
+              </button>
+
+              {clientEmail && (
+                <button
+                  onClick={handleChangeEmail}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Cambiar de Correo</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* SCREEN 5: CHECKING STATUS IN PROGRESS */}
+          {emailStatus === "checking" && (
+            <div className="text-center space-y-4 py-8">
+              <div className="text-6xl animate-bounce">🍼</div>
+              <div className="flex items-center justify-center gap-2">
+                <RefreshCw className="w-5 h-5 text-pink-500 animate-spin" />
+                <span className="font-display font-bold text-sm text-slate-600">Verificando tu correo...</span>
+              </div>
+            </div>
+          )}
+
+          {/* SHARED FOOTER FOR ACCREDITED LICENSING */}
           <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
-            Licencia de uso exclusivo para un dispositivo.
+            Licencia individual BabyChef. Todos los derechos reservados.
           </div>
         </div>
+
+        {/* ================= ADMIN MANAGEMENT PANEL MODAL ================= */}
+        {showAdminModal && (
+          <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-50 p-4 backdrop-blur-xs select-none">
+            <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-[560px] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left">
+              
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <Key className="w-5 h-5" />
+                  <div>
+                    <h3 className="font-display font-bold text-sm">Administración BabyChef</h3>
+                    <p className="text-[10px] opacity-85">Control de Autorizaciones de Clientes</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setShowAdminModal(false);
+                    setAdminError("");
+                    setAdminEmailInput("");
+                    setAdminPasswordInput("");
+                  }} 
+                  className="p-1 hover:bg-white/15 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+                {/* 1. ADMIN LOGIN FORM IF NOT LOGGED IN */}
+                {!isAdminLoggedIn ? (
+                  <form onSubmit={handleAdminLogin} className="space-y-4">
+                    <p className="text-xs text-slate-500 leading-normal">
+                      Por favor, introduce tu correo administrativo y la clave maestra de vendedor para acceder a la lista de clientes y autorizar sus ingresos.
+                    </p>
+
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Correo del Administrador
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={adminEmailInput}
+                          onChange={e => setAdminEmailInput(e.target.value)}
+                          className="w-full text-xs p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-800 dark:text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                          Clave Maestra de Activación (Master Key)
+                        </label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="••••••••••••••"
+                          value={adminPasswordInput}
+                          onChange={e => setAdminPasswordInput(e.target.value)}
+                          className="w-full text-xs p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 text-slate-800 dark:text-white font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {adminError && (
+                      <p className="text-xs font-bold text-rose-500">⚠ {adminError}</p>
+                    )}
+
+                    <button
+                      type="submit"
+                      className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Ingresar al Panel Administrativo</span>
+                    </button>
+                  </form>
+                ) : (
+                  // 2. LOGGED IN MANAGEMENT PANEL VIEWS
+                  <div className="space-y-5">
+                    
+                    {/* Success notification popup bar */}
+                    {adminSuccessMessage && (
+                      <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400 rounded-xl text-xs font-semibold flex items-center gap-1.5 animate-in fade-in duration-200">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                        <span>{adminSuccessMessage}</span>
+                      </div>
+                    )}
+
+                    {/* Pre-Authorization addition section */}
+                    <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+                      <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
+                        Pre-Autorizar Correo de Cliente Nuevo
+                      </h4>
+                      <form onSubmit={handleAdminAddClientSubmit} className="flex gap-2">
+                        <input
+                          type="email"
+                          required
+                          placeholder="cliente@correo.com"
+                          value={adminNewClientEmail}
+                          onChange={e => setAdminNewClientEmail(e.target.value)}
+                          className="flex-1 text-xs p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-white"
+                        />
+                        <button
+                          type="submit"
+                          className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Pre-Autorizar</span>
+                        </button>
+                      </form>
+                      <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5">
+                        Si registras el correo de tu cliente aquí, podrá acceder inmediatamente al abrir la aplicación sin necesidad de esperar aprobación.
+                      </p>
+                    </div>
+
+                    {/* Searches/stats row */}
+                    <div className="flex flex-col sm:flex-row gap-3 items-center justify-between">
+                      <div className="relative w-full sm:w-60">
+                        <Search className="absolute left-3 w-3.5 h-3.5 text-slate-400 top-3" />
+                        <input
+                          type="text"
+                          placeholder="Buscar cliente..."
+                          value={adminQuery}
+                          onChange={e => setAdminQuery(e.target.value)}
+                          className="w-full text-xs pl-8.5 pr-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-white"
+                        />
+                      </div>
+                      
+                      <div className="flex gap-4 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                        <span>Total: <strong>{adminRegistrations.length}</strong></span>
+                        <span>Autorizados: <strong className="text-emerald-500">{adminRegistrations.filter(r => r.status === "authorized").length}</strong></span>
+                        <span>Pendientes: <strong className="text-amber-500">{adminRegistrations.filter(r => r.status === "pending").length}</strong></span>
+                      </div>
+                    </div>
+
+                    {/* Registered users list table */}
+                    <div className="border border-slate-100 dark:border-slate-800 rounded-2xl overflow-hidden divide-y divide-slate-100 dark:divide-slate-800 bg-white dark:bg-slate-900 max-h-[300px] overflow-y-auto">
+                      {adminRegistrations.length === 0 ? (
+                        <div className="p-8 text-center text-xs text-slate-400">
+                          Ningún cliente registrado en el sistema todavía.
+                        </div>
+                      ) : (
+                        adminRegistrations
+                          .filter(r => r.email.includes(adminQuery.toLowerCase()))
+                          .map((reg) => (
+                            <div key={reg.email} className="p-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate max-w-xs block">
+                                    {reg.email}
+                                  </span>
+                                  {reg.email === "liziumventasonline@gmail.com" && (
+                                    <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300 text-[8px] font-extrabold px-1.5 py-0.5 rounded-md uppercase">
+                                      Creador
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 text-[10px] text-slate-400 dark:text-slate-500 flex-wrap">
+                                  <span>Reg: {new Date(reg.registeredAt).toLocaleDateString()}</span>
+                                  <span>•</span>
+                                  <span className={reg.deviceId ? "text-slate-600 dark:text-slate-400" : "text-amber-500 font-semibold"}>
+                                    {reg.deviceId ? `ID Celular: ${reg.deviceId.substring(0, 10)}...` : "Sin celular asociado"}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 justify-end">
+                                {reg.email !== "liziumventasonline@gmail.com" && (
+                                  <>
+                                    {reg.status === "pending" ? (
+                                      <button
+                                        onClick={() => handleAdminUpdateStatus(reg.email, "authorize")}
+                                        className="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[10px] font-extrabold transition-all cursor-pointer"
+                                      >
+                                        Autorizar
+                                      </button>
+                                    ) : (
+                                      <button
+                                        onClick={() => handleAdminUpdateStatus(reg.email, "revoke")}
+                                        className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[10px] font-extrabold transition-all cursor-pointer"
+                                      >
+                                        Revocar
+                                      </button>
+                                    )}
+
+                                    {reg.deviceId && (
+                                      <button
+                                        onClick={() => handleAdminUpdateStatus(reg.email, "reset-device")}
+                                        className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-700 rounded-lg transition-colors cursor-pointer"
+                                        title="Liberar Celular (Permite vincular otro dispositivo)"
+                                      >
+                                        <RefreshCw className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    <button
+                                      onClick={() => {
+                                        if (confirm(`¿Estás seguro de que deseas eliminar permanentemente a ${reg.email}?`)) {
+                                          handleAdminUpdateStatus(reg.email, "delete");
+                                        }
+                                      }}
+                                      className="p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-500 hover:text-rose-700 rounded-lg transition-colors cursor-pointer"
+                                      title="Eliminar Cuenta"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))
+                      )}
+                    </div>
+
+                    {/* Log out administrator option */}
+                    <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800">
+                      <button
+                        onClick={() => {
+                          setIsAdminLoggedIn(false);
+                          setAdminRegistrations([]);
+                          setAdminPasswordInput("");
+                        }}
+                        className="text-xs text-rose-500 hover:text-rose-600 font-bold transition-all cursor-pointer"
+                      >
+                        Cerrar Sesión de Administrador
+                      </button>
+                      <button
+                        onClick={() => setShowAdminModal(false)}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                      >
+                        Cerrar Ventana
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

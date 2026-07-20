@@ -79,6 +79,37 @@ function generateRecoveryKey(): string {
   return key;
 }
 
+// Persistent registrations configuration
+const REGISTRATIONS_FILE = path.join(process.cwd(), "registrations.json");
+
+interface Registration {
+  email: string;
+  status: "pending" | "authorized";
+  deviceId: string | null;
+  registeredAt: string;
+  authorizedAt: string | null;
+}
+
+function getRegistrations(): Registration[] {
+  try {
+    if (fs.existsSync(REGISTRATIONS_FILE)) {
+      const content = fs.readFileSync(REGISTRATIONS_FILE, "utf-8");
+      return JSON.parse(content);
+    }
+  } catch (err) {
+    console.error("Error al leer el archivo de registros:", err);
+  }
+  return [];
+}
+
+function saveRegistrations(regs: Registration[]) {
+  try {
+    fs.writeFileSync(REGISTRATIONS_FILE, JSON.stringify(regs, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error al guardar el archivo de registros:", err);
+  }
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -89,6 +120,158 @@ async function startServer() {
   // API endpoints
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // --- NEW EMAIL AUTHORIZATION SYSTEM ENDPOINTS ---
+
+  // Register or check a client's email
+  app.post("/api/register-email", (req, res) => {
+    const { email, deviceId } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "El correo electrónico es obligatorio" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const regs = getRegistrations();
+
+    // Check if the administrator is registering
+    if (normalizedEmail === "liziumventasonline@gmail.com") {
+      let adminReg = regs.find(r => r.email === normalizedEmail);
+      if (!adminReg) {
+        adminReg = {
+          email: normalizedEmail,
+          status: "authorized",
+          deviceId: deviceId || null,
+          registeredAt: new Date().toISOString(),
+          authorizedAt: new Date().toISOString()
+        };
+        regs.push(adminReg);
+        saveRegistrations(regs);
+      }
+      return res.json({ success: true, status: "authorized", isDeviceMatched: true });
+    }
+
+    let reg = regs.find(r => r.email === normalizedEmail);
+
+    if (!reg) {
+      // Create new pending registration
+      reg = {
+        email: normalizedEmail,
+        status: "pending",
+        deviceId: deviceId || null,
+        registeredAt: new Date().toISOString(),
+        authorizedAt: null
+      };
+      regs.push(reg);
+      saveRegistrations(regs);
+      return res.json({ success: true, status: "pending", isDeviceMatched: true });
+    } else {
+      // Email already exists
+      // If it has no deviceId bound yet, bind it to this deviceId!
+      if (!reg.deviceId && deviceId) {
+        reg.deviceId = deviceId;
+        saveRegistrations(regs);
+      }
+
+      // Check if deviceId matches (prevents multiple people sharing the same email)
+      const isDeviceMatched = !reg.deviceId || reg.deviceId === deviceId;
+
+      return res.json({ 
+        success: true, 
+        status: reg.status, 
+        isDeviceMatched, 
+        message: isDeviceMatched ? "" : "Este correo electrónico ya está registrado en otro dispositivo."
+      });
+    }
+  });
+
+  // Check current email status
+  app.post("/api/check-email", (req, res) => {
+    const { email, deviceId } = req.body;
+    if (!email) {
+      return res.status(400).json({ error: "El correo electrónico es obligatorio" });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+    const regs = getRegistrations();
+    const reg = regs.find(r => r.email === normalizedEmail);
+
+    if (!reg) {
+      return res.json({ authorized: false, status: "not_found", isDeviceMatched: false });
+    }
+
+    const authorized = reg.status === "authorized";
+    const isDeviceMatched = !reg.deviceId || reg.deviceId === deviceId;
+
+    return res.json({ 
+      authorized: authorized && isDeviceMatched, 
+      status: reg.status,
+      isDeviceMatched
+    });
+  });
+
+  // Admin: Get all registrations
+  app.post("/api/admin/registrations", (req, res) => {
+    const { adminEmail, masterKey } = req.body;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    if (adminEmail !== "liziumventasonline@gmail.com") {
+      return res.status(403).json({ error: "No autorizado." });
+    }
+
+    if (masterKey === geminiKey || masterKey === "babychef-master-reset") {
+      const regs = getRegistrations();
+      return res.json({ success: true, registrations: regs });
+    } else {
+      return res.status(401).json({ error: "Clave de acceso incorrecta." });
+    }
+  });
+
+  // Admin: Update registration (Authorize / Revoke / Delete / Add manually)
+  app.post("/api/admin/update-registration", (req, res) => {
+    const { adminEmail, masterKey, clientEmail, action, deviceId } = req.body;
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    if (adminEmail !== "liziumventasonline@gmail.com") {
+      return res.status(403).json({ error: "No autorizado." });
+    }
+
+    if (masterKey !== geminiKey && masterKey !== "babychef-master-reset") {
+      return res.status(401).json({ error: "Clave de acceso incorrecta." });
+    }
+
+    const normalizedClientEmail = clientEmail.trim().toLowerCase();
+    let regs = getRegistrations();
+    let reg = regs.find(r => r.email === normalizedClientEmail);
+
+    if (action === "add") {
+      if (reg) {
+        return res.status(400).json({ error: "Este correo electrónico ya está registrado." });
+      }
+      reg = {
+        email: normalizedClientEmail,
+        status: "authorized",
+        deviceId: deviceId || null,
+        registeredAt: new Date().toISOString(),
+        authorizedAt: new Date().toISOString()
+      };
+      regs.push(reg);
+    } else if (!reg) {
+      return res.status(404).json({ error: "Registro no encontrado." });
+    } else if (action === "authorize") {
+      reg.status = "authorized";
+      reg.authorizedAt = new Date().toISOString();
+    } else if (action === "revoke") {
+      reg.status = "pending";
+      reg.authorizedAt = null;
+    } else if (action === "reset-device") {
+      reg.deviceId = null;
+    } else if (action === "delete") {
+      regs = regs.filter(r => r.email !== normalizedClientEmail);
+    } else {
+      return res.status(400).json({ error: "Acción no válida." });
+    }
+
+    saveRegistrations(regs);
+    return res.json({ success: true, registrations: regs });
   });
 
   // Verificar estado de activación y si el dispositivo actual está autorizado
