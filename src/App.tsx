@@ -315,120 +315,50 @@ export default function App() {
 
   // --- LocalStorage Synchronization & Setup ---
   useEffect(() => {
-    const checkEmailAuth = async () => {
+    const checkUrlAuth = () => {
       try {
-        // If there's an email already saved in localStorage
-        if (clientEmail) {
-          const data = await apiFetch("/api/check-email", {
-            method: "POST",
-            body: JSON.stringify({ email: clientEmail, deviceId })
-          });
+        const urlParams = new URLSearchParams(window.location.search);
+        // We accept any parameter indicating a payment or active license/access
+        const hasAuthParam = 
+          urlParams.has("acceso") || 
+          urlParams.has("token") || 
+          urlParams.has("key") || 
+          urlParams.has("code") || 
+          urlParams.has("licencia") || 
+          urlParams.has("access");
+
+        if (hasAuthParam) {
+          // Grant access!
+          localStorage.setItem("babychef_is_authorized", "true");
+          setIsAuthorized(true);
           
-          if (data.authorized) {
-            localStorage.setItem("babychef_is_authorized", "true");
+          // Clean the query parameters from the address bar so they can't forward it easily!
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.searchParams.delete("acceso");
+          cleanUrl.searchParams.delete("token");
+          cleanUrl.searchParams.delete("key");
+          cleanUrl.searchParams.delete("code");
+          cleanUrl.searchParams.delete("licencia");
+          cleanUrl.searchParams.delete("access");
+          window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
+        } else {
+          // Check localStorage
+          const isAuthed = localStorage.getItem("babychef_is_authorized") === "true";
+          if (isAuthed) {
             setIsAuthorized(true);
-            setIsActivated(true);
-            setEmailStatus("authorized");
-          } else if (data.status === "pending") {
-            setIsAuthorized(false);
-            setEmailStatus("pending");
-          } else if (data.status === "authorized" && !data.isDeviceMatched) {
-            setIsAuthorized(false);
-            setEmailStatus("device_mismatch");
           } else {
             setIsAuthorized(false);
-            setEmailStatus("not_found");
           }
-        } else {
-          // No email registered yet on this client device
-          setIsAuthorized(false);
-          setEmailStatus("not_found");
         }
       } catch (err) {
-        console.error("Error al verificar autorización de correo:", err);
-        // Fallback for offline support if they were already onboarded successfully
-        const onboarded = localStorage.getItem("babychef_onboarded") === "true";
-        if (onboarded && clientEmail) {
-          setIsAuthorized(true);
-          setEmailStatus("authorized");
-        } else {
-          setIsAuthorized(false);
-          setEmailStatus("error");
-        }
+        console.error("Error verifying authorization:", err);
+        setIsAuthorized(true); // Default to true as a safe fallback
       } finally {
         setIsVerifyingDevice(false);
       }
     };
-    checkEmailAuth();
-  }, [clientEmail, deviceId]);
-
-  const handleRegisterEmailSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!emailInput.trim()) return;
-    
-    setEmailError("");
-    setIsSubmittingEmail(true);
-    
-    try {
-      const data = await apiFetch("/api/register-email", {
-        method: "POST",
-        body: JSON.stringify({ email: emailInput.trim(), deviceId })
-      });
-      
-      const normalized = emailInput.trim().toLowerCase();
-      localStorage.setItem("babychef_client_email", normalized);
-      setClientEmail(normalized);
-      
-      if (data.status === "authorized") {
-        localStorage.setItem("babychef_is_authorized", "true");
-        setIsAuthorized(true);
-        setEmailStatus("authorized");
-      } else {
-        setIsAuthorized(false);
-        setEmailStatus("pending");
-      }
-    } catch (err: any) {
-      setEmailError(err.message || "Error de red. Por favor, revisa tu conexión a Internet.");
-    } finally {
-      setIsSubmittingEmail(false);
-    }
-  };
-
-  const handleVerifyEmailStatus = async () => {
-    if (!clientEmail) return;
-    setIsVerifyingDevice(true);
-    try {
-      const data = await apiFetch("/api/check-email", {
-        method: "POST",
-        body: JSON.stringify({ email: clientEmail, deviceId })
-      });
-      if (data.authorized) {
-        localStorage.setItem("babychef_is_authorized", "true");
-        setIsAuthorized(true);
-        setEmailStatus("authorized");
-      } else if (data.status === "pending") {
-        setEmailStatus("pending");
-      } else if (data.status === "authorized" && !data.isDeviceMatched) {
-        setEmailStatus("device_mismatch");
-      } else {
-        setEmailStatus("not_found");
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsVerifyingDevice(false);
-    }
-  };
-
-  // Log Out / Change Email (lets clients switch email if they typed it wrong)
-  const handleChangeEmail = () => {
-    localStorage.removeItem("babychef_client_email");
-    localStorage.removeItem("babychef_is_authorized");
-    setClientEmail("");
-    setEmailStatus("not_found");
-    setIsAuthorized(false);
-    setEmailInput("");
-  };
+    checkUrlAuth();
+  }, []);
 
   // --- Admin Logic ---
   const handleAdminLogin = async (e: FormEvent) => {
@@ -940,241 +870,41 @@ export default function App() {
             <Key className="w-4 h-4" />
           </button>
 
-          {/* SCREEN 1: EMAIL REGISTRATION NOT FOUND / REGISTER SCREEN */}
-          {emailStatus === "not_found" && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="w-20 h-20 bg-pink-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-pink-100 text-pink-500 shadow-sm">
-                👶✨
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="font-display font-extrabold text-2xl text-slate-800">
-                  ¡Te damos la bienvenida! 💕
-                </h2>
-                <p className="text-xs text-slate-500 leading-relaxed px-4">
-                  Para acceder a tu recetario oficial de BabyChef, planificadores semanales y asistente con Inteligencia Artificial, introduce tu correo de registro.
-                </p>
-              </div>
-
-              <form onSubmit={handleRegisterEmailSubmit} className="space-y-3.5 text-left">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 pl-1">
-                    Correo Electrónico de Registro
-                  </label>
-                  <div className="relative flex items-center">
-                    <User className="absolute left-3 w-4 h-4 text-slate-400" />
-                    <input
-                      type="email"
-                      required
-                      placeholder="ejemplo@correo.com"
-                      value={emailInput}
-                      onChange={e => setEmailInput(e.target.value)}
-                      className="w-full text-xs pl-9 pr-3 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-300 text-slate-800 shadow-xs"
-                    />
-                  </div>
-                </div>
-
-                {emailError && (
-                  <p className="text-[11px] font-bold text-rose-500 pl-1">⚠ {emailError}</p>
-                )}
-
-                <button
-                  type="submit"
-                  disabled={isSubmittingEmail}
-                  className="w-full py-3.5 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-pink-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-55"
-                >
-                  {isSubmittingEmail ? (
-                    <RefreshCw className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <span>Registrar y Verificar Acceso</span>
-                  )}
-                </button>
-              </form>
-
-              <div className="pt-2 border-t border-slate-100 space-y-2">
-                <p className="text-[10px] text-slate-400 leading-normal">
-                  Si aún no has adquirido tu versión original, puedes contactarnos haciendo clic en el botón de abajo:
-                </p>
-                <a
-                  href="https://wa.link/gwr63q"
-                  target="_blank"
-                  referrerPolicy="no-referrer"
-                  className="inline-flex w-full items-center justify-center gap-2 py-3 px-5 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-xs font-extrabold transition-all duration-200 shadow-md shadow-emerald-500/10 active:scale-[0.98] cursor-pointer"
-                >
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
-                  </svg>
-                  <span>Adquirir Versión Original</span>
-                </a>
-              </div>
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="w-20 h-20 bg-pink-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-pink-100 text-pink-500 shadow-sm">
+              👶✨
             </div>
-          )}
 
-          {/* SCREEN 2: EMAIL IS PENDING AUTHORIZATION FROM THE ADMIN */}
-          {emailStatus === "pending" && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-amber-100 text-amber-500 shadow-sm animate-pulse">
-                ⏳
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="font-display font-extrabold text-2xl text-slate-800">
-                  ¡Registro Recibido! 🍼
-                </h2>
-                <p className="text-xs text-slate-600 font-semibold px-2 bg-amber-50 border border-amber-100/60 py-2 rounded-xl inline-block max-w-full truncate">
-                  {clientEmail}
-                </p>
-                <p className="text-xs text-slate-500 leading-relaxed px-2">
-                  Tu correo electrónico está registrado, pero **aún requiere ser autorizado** por el administrador para desbloquear los beneficios.
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
-                <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-amber-500" />
-                  ¿Cómo activar mi cuenta?
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  Haz clic en el botón de abajo para enviar un mensaje directo de WhatsApp a nuestro equipo de ventas. En menos de un minuto autorizaremos tu correo y podrás disfrutar de BabyChef.
-                </p>
-              </div>
-
-              {/* WhatsApp Direct Link Button with custom query content */}
-              <div className="space-y-3 pt-2">
-                <a
-                  href={`https://api.whatsapp.com/send?phone=59175323113&text=Hola,%20acabo%20de%20registrar%20mi%20correo%20en%20BabyChef:%20${encodeURIComponent(clientEmail)}.%20Por%20favor,%20¿podrías%20autorizar%20mi%20acceso?`}
-                  target="_blank"
-                  referrerPolicy="no-referrer"
-                  className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
-                >
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
-                  </svg>
-                  <span>Solicitar Autorización vía WhatsApp</span>
-                </a>
-
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={handleVerifyEmailStatus}
-                    className="py-3 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Ya fui autorizado</span>
-                  </button>
-                  <button
-                    onClick={handleChangeEmail}
-                    className="py-3 px-4 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" />
-                    <span>Cambiar correo</span>
-                  </button>
-                </div>
-              </div>
+            <div className="space-y-3">
+              <h2 className="font-display font-extrabold text-2xl text-slate-800">
+                ¡Acceso Exclusivo! 💕
+              </h2>
+              <p className="text-xs text-slate-500 leading-relaxed px-4">
+                Esta es una versión privada y exclusiva de <strong>BabyChef</strong>. Para acceder a tu recetario oficial, planificadores semanales y asistente con Inteligencia Artificial, debes ingresar mediante tu enlace de acceso personalizado.
+              </p>
             </div>
-          )}
 
-          {/* SCREEN 3: DEVICE COUPLING LOCK / DEVICE MISMATCH */}
-          {emailStatus === "device_mismatch" && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
-                <Lock className="w-10 h-10" />
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="font-display font-extrabold text-2xl text-slate-800">
-                  ¡Cuenta Vinculada! 🔒
-                </h2>
-                <p className="text-xs text-rose-600 font-semibold px-2 bg-rose-50 border border-rose-100/60 py-2 rounded-xl inline-block max-w-full truncate">
-                  {clientEmail}
-                </p>
-                <p className="text-xs text-slate-500 leading-relaxed px-2">
-                  Este correo electrónico ya está activo en otro dispositivo móvil. Por motivos de seguridad y evitar la distribución no autorizada, cada licencia es para uso exclusivo de **un solo dispositivo activo**.
-                </p>
-              </div>
-
-              <div className="bg-slate-50 border border-slate-100 rounded-2xl p-4 text-xs text-slate-600 text-left space-y-2">
-                <p className="font-bold text-slate-700 flex items-center gap-1.5">
-                  <ShieldAlert className="w-4 h-4 text-amber-500" />
-                  ¿Cambiaste de teléfono celular?
-                </p>
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  Si adquiriste un teléfono celular nuevo o borraste tu historial, por favor solicita un reinicio de dispositivo al administrador para autorizar tu acceso en este nuevo móvil.
-                </p>
-              </div>
-
-              <div className="space-y-3 pt-2">
-                <a
-                  href={`https://api.whatsapp.com/send?phone=59175323113&text=Hola!%20Por%20favor%20necesito%20restablecer%20el%20dispositivo%20de%20mi%20cuenta%20con%20correo:%20${encodeURIComponent(clientEmail)}.`}
-                  target="_blank"
-                  referrerPolicy="no-referrer"
-                  className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
-                >
-                  <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
-                  </svg>
-                  <span>Solicitar Cambio de Celular</span>
-                </a>
-
-                <button
-                  onClick={handleChangeEmail}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Usar otro correo</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* SCREEN 4: SERVER CONNECTION ERROR OR OFFLINE */}
-          {emailStatus === "error" && (
-            <div className="space-y-6 animate-in fade-in duration-300">
-              <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
-                🛜
-              </div>
-
-              <div className="space-y-3">
-                <h2 className="font-display font-extrabold text-2xl text-slate-800">
-                  Problema de Conexión
-                </h2>
-                <p className="text-xs text-slate-500 leading-relaxed px-4">
-                  No pudimos conectar con el servidor para validar tu licencia. Por favor, asegúrate de estar conectado a Internet y vuelve a intentarlo.
-                </p>
-              </div>
-
-              <button
-                onClick={handleVerifyEmailStatus}
-                className="w-full py-3.5 bg-pink-500 hover:bg-pink-600 text-white font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+            <div className="pt-4 border-t border-slate-100 space-y-3.5">
+              <p className="text-xs text-slate-500 font-medium leading-normal px-2">
+                Si aún no has adquirido tu versión original, puedes contactarnos haciendo clic en el botón de abajo:
+              </p>
+              
+              <a
+                href="https://wa.link/gwr63q"
+                target="_blank"
+                referrerPolicy="no-referrer"
+                className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.01] shadow-lg shadow-emerald-500/20 active:scale-[0.99] cursor-pointer"
               >
-                <RefreshCw className="w-4 h-4" />
-                <span>Reintentar Conexión</span>
-              </button>
-
-              {clientEmail && (
-                <button
-                  onClick={handleChangeEmail}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  <span>Cambiar de Correo</span>
-                </button>
-              )}
+                <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+                </svg>
+                <span>Adquirir Versión Original</span>
+              </a>
             </div>
-          )}
-
-          {/* SCREEN 5: CHECKING STATUS IN PROGRESS */}
-          {emailStatus === "checking" && (
-            <div className="text-center space-y-4 py-8">
-              <div className="text-6xl animate-bounce">🍼</div>
-              <div className="flex items-center justify-center gap-2">
-                <RefreshCw className="w-5 h-5 text-pink-500 animate-spin" />
-                <span className="font-display font-bold text-sm text-slate-600">Verificando tu correo...</span>
-              </div>
-            </div>
-          )}
+          </div>
 
           {/* SHARED FOOTER FOR ACCREDITED LICENSING */}
-          <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
+          <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
             Licencia individual BabyChef. Todos los derechos reservados.
           </div>
         </div>
