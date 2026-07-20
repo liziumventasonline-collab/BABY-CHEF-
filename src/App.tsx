@@ -44,7 +44,8 @@ import {
   Key,
   ShieldAlert,
   RefreshCw,
-  Copy
+  Copy,
+  HelpCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -247,6 +248,9 @@ export default function App() {
 
   // Article reading state
   const [selectedArticle, setSelectedArticle] = useState<GuideArticle | null>(null);
+
+  // Inquiry Search state
+  const [inquiryQuery, setInquiryQuery] = useState("");
 
   // Random quote index
   const [quoteIndex] = useState(() => Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length));
@@ -604,56 +608,56 @@ export default function App() {
         body: JSON.stringify({ deviceId })
       });
       
-      const actData = await actRes.json();
-      
       if (!actRes.ok) {
-        alert(actData.error || "Esta copia de la aplicación ya ha sido activada en otro dispositivo.");
+        // Si el servidor explícitamente indica que ya está registrado por otro dispositivo
         setIsAuthorized(false);
         setIsActivated(true);
         return;
       }
 
-      // Guardar el código de recuperación para mostrarlo en pantalla
-      setGeneratedRecoveryKey(actData.recoveryKey);
-      setShowRecoveryCodeModal(true);
-
-      const babyId = `baby-${Date.now()}`;
-      const newBaby: BabyProfile = {
-        id: babyId,
-        name: newBabyName.trim(),
-        birthDate: newBabyBirth,
-        allergies: newBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
-        restrictedFoods: (newBabyRestrictions || "Sal, Azúcar, Miel").split(",").map(s => s.trim()).filter(Boolean),
-        preferences: newBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
-        observations: newBabyObs.trim(),
-        photoUrl: onboardingPhotoUrl || undefined,
-        photoColor: "bg-teal-100 text-teal-700"
-      };
-
-      // Reemplazar bebés con el perfil creado para limpiar Mateo por defecto
-      setBabies([newBaby]);
-      setActiveBabyId(babyId);
-
-      // Guardar registro de crecimiento inicial
-      const entryDate = new Date().toISOString().split("T")[0];
-      const initialGrowth: GrowthEntry = {
-        id: `growth-${Date.now()}`,
-        date: entryDate,
-        weight: parseFloat(newBabyWeight),
-        height: parseFloat(newBabyHeight),
-        headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
-        notes: "Registro de alta inicial de bienvenida 🧸"
-      };
-      setGrowthEntries([initialGrowth]);
-
-      // Guardar estado en localStorage
-      localStorage.setItem("babychef_onboarded", "true");
-      setIsAuthorized(true);
-      setIsActivated(true);
+      const actData = await actRes.json();
+      if (actData && actData.recoveryKey) {
+        localStorage.setItem("babychef_recovery_key", actData.recoveryKey);
+      }
     } catch (err) {
-      console.error("Error al activar copia:", err);
-      alert("Error de conexión al activar tu licencia de BabyChef. Por favor, asegúrate de estar conectado a internet.");
+      // Si el servidor no responde (ej. en hosting estático como Vercel), ignoramos silenciosamente
+      console.warn("Servidor de activación no disponible o modo offline. Continuando con registro local.", err);
     }
+
+    const babyId = `baby-${Date.now()}`;
+    const newBaby: BabyProfile = {
+      id: babyId,
+      name: newBabyName.trim(),
+      birthDate: newBabyBirth,
+      allergies: newBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
+      restrictedFoods: (newBabyRestrictions || "Sal, Azúcar, Miel").split(",").map(s => s.trim()).filter(Boolean),
+      preferences: newBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
+      observations: newBabyObs.trim(),
+      photoUrl: onboardingPhotoUrl || undefined,
+      photoColor: "bg-teal-100 text-teal-700"
+    };
+
+    // Reemplazar bebés con el perfil creado para limpiar Mateo por defecto
+    setBabies([newBaby]);
+    setActiveBabyId(babyId);
+
+    // Guardar registro de crecimiento inicial
+    const entryDate = new Date().toISOString().split("T")[0];
+    const initialGrowth: GrowthEntry = {
+      id: `growth-${Date.now()}`,
+      date: entryDate,
+      weight: parseFloat(newBabyWeight),
+      height: parseFloat(newBabyHeight),
+      headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
+      notes: "Registro de alta inicial de bienvenida 🧸"
+    };
+    setGrowthEntries([initialGrowth]);
+
+    // Guardar estado en localStorage
+    localStorage.setItem("babychef_onboarded", "true");
+    setIsAuthorized(true);
+    setIsActivated(true);
+    setShowOnboarding(false);
   };
 
   // --- Sharing helper ---
@@ -722,17 +726,17 @@ export default function App() {
   if (isAuthorized === false) {
     return (
       <div className="min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
-        <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-6">
+        <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-6 animate-in fade-in zoom-in duration-300">
           <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm">
             <Lock className="w-10 h-10" />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-3">
             <h2 className="font-display font-extrabold text-2xl text-slate-800">
-              Aplicación Vinculada
+              ¡Hola, Familia! 👶✨
             </h2>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Esta copia de **BabyChef** ya se encuentra registrada y vinculada a otro dispositivo autorizado.
+            <p className="text-sm font-semibold text-rose-500 leading-relaxed px-2">
+              Error, contactate al servidor para adquirir tu acceso y disfrutar de todos los beneficios de baby chef
             </p>
           </div>
 
@@ -746,46 +750,59 @@ export default function App() {
             </p>
           </div>
 
-          <form onSubmit={handleRecoverAccess} className="space-y-3 pt-2 text-left">
-            <label className="block text-[11px] font-extrabold text-slate-500 uppercase tracking-wider pl-1">
-              ¿Eres el dueño de esta licencia?
-            </label>
-            <p className="text-[10px] text-slate-400 -mt-2 pl-1">
-              Si borraste el caché de tu navegador o cambiaste de celular, ingresa tu Código de Recuperación original:
-            </p>
-            <div className="space-y-2">
+          {/* WhatsApp Direct Link Button */}
+          <div className="pt-2">
+            <a
+              href="https://wa.link/gwr63q"
+              target="_blank"
+              referrerPolicy="no-referrer"
+              className="inline-flex w-full items-center justify-center gap-2.5 py-4 px-6 bg-[#25D366] hover:bg-[#20ba5a] text-white rounded-2xl text-sm font-extrabold transition-all duration-200 transform hover:scale-[1.02] shadow-lg shadow-emerald-500/20 active:scale-[0.98] cursor-pointer"
+            >
+              <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946C.06 5.348 5.397.01 12.008.01c3.202.001 6.212 1.246 8.477 3.514 2.266 2.268 3.507 5.28 3.505 8.484-.004 6.657-5.34 11.997-11.953 11.997-2.005-.001-3.973-.502-5.724-1.455L0 24zm6.59-4.846c1.6.95 3.488 1.449 5.412 1.451 5.428 0 9.842-4.414 9.845-9.84.001-2.63-1.019-5.101-2.871-6.956-1.851-1.854-4.312-2.875-6.942-2.876-5.432 0-9.848 4.413-9.852 9.84-.001 1.96.512 3.878 1.488 5.584l-.975 3.562 3.655-.959zm10.158-6.938c-.287-.143-1.696-.837-1.959-.933-.262-.096-.452-.143-.642.143-.19.287-.736.933-.903 1.124-.166.19-.333.215-.62.072-1.332-.667-2.28-1.157-3.09-2.545-.147-.25-.03-.386.08-.5.1-.102.215-.251.322-.376.107-.125.143-.215.215-.359.071-.143.036-.269-.018-.376-.053-.107-.452-1.088-.62-1.492-.162-.392-.326-.339-.452-.345-.117-.006-.25-.007-.382-.007-.132 0-.347.049-.529.247-.182.197-.694.678-.694 1.654s.71 1.916.81 2.047c.099.13 1.398 2.135 3.387 2.99.473.203.842.325 1.129.417.475.15.908.129 1.248.078.381-.058 1.696-.694 1.935-1.363.238-.668.238-1.24.167-1.363-.071-.122-.262-.215-.55-.358z"/>
+              </svg>
+              <span>Adquirir Acceso en WhatsApp</span>
+            </a>
+          </div>
+
+          {/* Optional sub-accordion for recovery key in case user cleared cache but has key */}
+          <details className="text-left select-none group">
+            <summary className="text-[10px] text-slate-400 hover:text-slate-500 cursor-pointer text-center list-none outline-none">
+              ¿Ya habías comprado y borraste tu historial? <span className="underline group-open:hidden">Reactivar</span><span className="underline hidden group-open:inline">Ocultar</span>
+            </summary>
+            <form onSubmit={handleRecoverAccess} className="space-y-2 mt-2 pt-2 border-t border-dashed border-slate-200 animate-in fade-in duration-200">
+              <p className="text-[10px] text-slate-500 leading-normal">
+                Ingresa tu Código de Recuperación original que se generó al activar tu cuenta:
+              </p>
               <div className="relative flex items-center">
-                <Key className="absolute left-3 w-4 h-4 text-slate-400" />
+                <Key className="absolute left-2.5 w-3.5 h-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder="BABYCHEF-XXXX-XXXX-XXXX-XXXX"
+                  placeholder="BABYCHEF-XXXX-XXXX"
                   value={recoveryInput}
                   onChange={e => setRecoveryInput(e.target.value)}
-                  className="w-full text-xs pl-9 pr-3 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-pink-400 text-slate-800 font-mono"
+                  className="w-full text-[11px] pl-8 pr-2 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-pink-400 text-slate-800 font-mono"
                   required
                 />
               </div>
-              
               {recoveryError && (
-                <p className="text-[11px] font-bold text-rose-500 pl-1">{recoveryError}</p>
+                <p className="text-[10px] font-bold text-rose-500 pl-1">{recoveryError}</p>
               )}
               {recoverySuccess && (
-                <p className="text-[11px] font-bold text-emerald-600 pl-1">✓ ¡Código correcto! Vinculando nuevo dispositivo...</p>
+                <p className="text-[10px] font-bold text-emerald-600 pl-1">✓ Código correcto. Vinculando nuevo dispositivo...</p>
               )}
-
               <button
                 type="submit"
-                className="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-pink-500/10 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full py-2 bg-pink-500 hover:bg-pink-600 text-white rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3 h-3" />
                 <span>Verificar y Reactivar Acceso</span>
               </button>
-            </div>
-          </form>
+            </form>
+          </details>
 
-          <div className="pt-4 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
-            ¿No tienes una licencia activa o eres el comprador?<br/>
-            Contacta al vendedor para adquirir tu copia original de BabyChef.
+          <div className="pt-2 border-t border-slate-100 text-[10px] text-slate-400 leading-normal">
+            Licencia de uso exclusivo para un dispositivo.
           </div>
         </div>
       </div>
@@ -829,58 +846,7 @@ export default function App() {
           </div>
         </div>
 
-        {showRecoveryCodeModal ? (
-          <div className="flex-1 overflow-y-auto p-8 flex flex-col justify-center items-center bg-gradient-to-b from-teal-50 via-white to-pink-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-center space-y-6">
-            <div className="w-20 h-20 bg-teal-50 dark:bg-teal-950/40 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-teal-100 dark:border-teal-900 text-teal-500 shadow-sm">
-              🎉
-            </div>
-
-            <div className="space-y-2">
-              <h2 className="font-display font-extrabold text-2xl text-slate-800 dark:text-white">
-                ¡Registro Activado!
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Esta copia de **BabyChef** se ha bloqueado y vinculado a este dispositivo con éxito.
-              </p>
-            </div>
-
-            <div className="w-full bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 text-center space-y-3 shadow-inner">
-              <p className="text-[10px] font-extrabold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Código de Recuperación de Licencia
-              </p>
-              <div className="bg-white dark:bg-slate-950 px-4 py-3 border border-slate-200 dark:border-slate-800 rounded-xl font-mono text-sm font-extrabold text-teal-600 dark:text-teal-400 tracking-wider flex items-center justify-between shadow-xs">
-                <span>{generatedRecoveryKey}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(generatedRecoveryKey);
-                    alert("✓ Código copiado al portapapeles.");
-                  }}
-                  className="p-1.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-900 dark:hover:bg-slate-800 rounded-lg text-slate-500 dark:text-slate-400 transition-colors"
-                  title="Copiar código"
-                >
-                  <Copy className="w-4 h-4" />
-                </button>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-normal">
-                **IMPORTANTE:** Guarda este código en un lugar seguro. Lo necesitarás si borras el historial de tu celular o si deseas abrir tu recetario en otro dispositivo.
-              </p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                navigator.clipboard.writeText(generatedRecoveryKey);
-                setShowRecoveryCodeModal(false);
-                setShowOnboarding(false);
-              }}
-              className="w-full py-3.5 bg-teal-500 hover:bg-teal-600 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-teal-500/10 cursor-pointer flex items-center justify-center gap-2"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Entendido, Copiar Código y Comenzar</span>
-            </button>
-          </div>
-        ) : showOnboarding ? (
+        {showOnboarding ? (
           <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
             {/* Beautiful Custom Onboarding Form */}
             <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
@@ -1085,8 +1051,10 @@ export default function App() {
             ))}
             <button
               onClick={() => {
-                setActiveTab("profile");
+                setActiveTab("dashboard");
+                setActiveDashboardSubTab("crecimiento");
                 setIsAddingBaby(true);
+                setIsEditingBaby(false);
               }}
               className="p-1 text-pink-400 hover:text-pink-500"
               title="Añadir Bebé"
@@ -1589,194 +1557,385 @@ export default function App() {
                     {/* SUBTAB 4: FICHA DE SALUD & SEGUIMIENTO DE CRECIMIENTO */}
                     {activeDashboardSubTab === "crecimiento" && (
                       <div className="space-y-5 text-left">
-                        {/* Presentation Card */}
-                        <div className={`p-5 rounded-3xl border transition-all ${
-                          isDarkMode 
-                            ? "bg-slate-800 border-slate-700 shadow-xs" 
-                            : "bg-white border-pink-100 shadow-sm"
-                        } space-y-4`}>
-                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 border-slate-100 dark:border-slate-700 gap-3">
-                            <div>
-                              <h3 className="font-display font-bold text-md text-slate-800 dark:text-white flex items-center gap-1.5">
-                                <User className="w-4.5 h-4.5 text-pink-400" />
-                                Perfil de Alimentación de {activeBaby?.name}
-                              </h3>
-                              <p className="text-[10px] text-slate-500">Ficha de presentación y requerimientos especiales</p>
+                        {isAddingBaby ? (
+                          /* --- FORM: NUEVO BEBE --- */
+                          <form onSubmit={handleAddBabyProfile} className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-emerald-200 dark:border-slate-700 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="flex justify-between items-center mb-1 border-b pb-2.5 border-slate-100 dark:border-slate-700">
+                              <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                <Plus className="w-4 h-4 text-emerald-500" /> Nuevo Perfil de Bebé
+                              </h4>
+                              <button onClick={() => setIsAddingBaby(false)} type="button" className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X className="w-4 h-4" />
+                              </button>
                             </div>
-                            
-                            {/* Actions Header */}
-                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                              <label 
-                                htmlFor="dashboard-baby-photo-btn"
-                                className="px-2 py-1 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre *</label>
+                                <input
+                                  type="text"
+                                  value={newBabyName}
+                                  onChange={e => setNewBabyName(e.target.value)}
+                                  placeholder="Ej: Sofía"
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha de Nacimiento *</label>
+                                <input
+                                  type="date"
+                                  value={newBabyBirth}
+                                  onChange={e => setNewBabyBirth(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alergias (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={newBabyAllergies}
+                                  onChange={e => setNewBabyAllergies(e.target.value)}
+                                  placeholder="Ej: Huevo, Lácteos, Gluten"
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preferencias (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={newBabyPrefs}
+                                  onChange={e => setNewBabyPrefs(e.target.value)}
+                                  placeholder="Ej: Plátano, Aguacate, Calabaza"
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alimentos Restringidos (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={newBabyRestrictions}
+                                  onChange={e => setNewBabyRestrictions(e.target.value)}
+                                  placeholder="Ej: Sal, Azúcar, Miel"
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                                <textarea
+                                  value={newBabyObs}
+                                  onChange={e => setNewBabyObs(e.target.value)}
+                                  placeholder="Ej: Iniciar con texturas blandas, le encantan las frutas."
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 h-16 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setIsAddingBaby(false)}
+                                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
                               >
-                                <Camera className="w-3 h-3" />
-                                <span>Subir Foto</span>
-                              </label>
-                              <input
-                                type="file"
-                                id="dashboard-baby-photo-btn"
-                                accept="image/*"
-                                onChange={handlePhotoChange}
-                                className="hidden"
+                                Cancelar
+                              </button>
+                              <button
+                                type="submit"
+                                className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              >
+                                Crear Perfil
+                              </button>
+                            </div>
+                          </form>
+                        ) : isEditingBaby ? (
+                          /* --- FORM: EDITAR PERFIL --- */
+                          <form onSubmit={handleSaveEditBaby} className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-sky-200 dark:border-slate-700 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                            <div className="flex justify-between items-center mb-1 border-b pb-2.5 border-slate-100 dark:border-slate-700">
+                              <h4 className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center gap-1">
+                                <Edit3 className="w-4 h-4 text-sky-500" /> Editar Perfil de {activeBaby?.name}
+                              </h4>
+                              <button onClick={() => setIsEditingBaby(false)} type="button" className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                            <div className="space-y-3">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre *</label>
+                                <input
+                                  type="text"
+                                  value={editBabyName}
+                                  onChange={e => setEditBabyName(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha de Nacimiento *</label>
+                                <input
+                                  type="date"
+                                  value={editBabyBirth}
+                                  onChange={e => setEditBabyBirth(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alergias (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={editBabyAllergies}
+                                  onChange={e => setEditBabyAllergies(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preferencias (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={editBabyPrefs}
+                                  onChange={e => setEditBabyPrefs(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alimentos Restringidos (separadas por comas)</label>
+                                <input
+                                  type="text"
+                                  value={editBabyRestrictions}
+                                  onChange={e => setEditBabyRestrictions(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                                <textarea
+                                  value={editBabyObs}
+                                  onChange={e => setEditBabyObs(e.target.value)}
+                                  className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 h-16 text-slate-800 dark:text-white"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2 pt-2">
+                              <button
+                                type="button"
+                                onClick={() => setIsEditingBaby(false)}
+                                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="submit"
+                                className="flex-1 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                              >
+                                Guardar Cambios
+                              </button>
+                            </div>
+                          </form>
+                        ) : (
+                          <>
+                            {/* Presentation Card */}
+                            <div className={`p-5 rounded-3xl border transition-all ${
+                              isDarkMode 
+                                ? "bg-slate-800 border-slate-700 shadow-xs" 
+                                : "bg-white border-pink-100 shadow-sm"
+                            } space-y-4`}>
+                              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-3 border-slate-100 dark:border-slate-700 gap-3">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="p-2 bg-pink-100/50 dark:bg-pink-950/60 rounded-2xl flex-shrink-0">
+                                    <User className="w-5 h-5 text-pink-500" />
+                                  </div>
+                                  <div>
+                                    <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">
+                                      Perfil de {activeBaby?.name}
+                                    </h3>
+                                    <p className="text-[10px] text-slate-400">Ficha médica y requerimientos especiales</p>
+                                  </div>
+                                </div>
+                                
+                                {/* Actions Header */}
+                                <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                                  <label 
+                                    htmlFor="dashboard-baby-photo-btn"
+                                    className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
+                                  >
+                                    <Camera className="w-3.5 h-3.5" />
+                                    <span>Subir Foto</span>
+                                  </label>
+                                  <input
+                                    type="file"
+                                    id="dashboard-baby-photo-btn"
+                                    accept="image/*"
+                                    onChange={handlePhotoChange}
+                                    className="hidden"
+                                  />
+
+                                  <button
+                                    onClick={() => {
+                                      handleStartEditBaby();
+                                    }}
+                                    className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    <span>Editar</span>
+                                  </button>
+
+                                  <button
+                                    onClick={() => {
+                                      setIsAddingBaby(true);
+                                      setIsEditingBaby(false);
+                                    }}
+                                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-emerald-100 dark:border-transparent transition-all"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    <span>Nuevo</span>
+                                  </button>
+
+                                  <button
+                                    onClick={handleDeleteBaby}
+                                    className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    <span>Eliminar</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Profile Stats Grid (Baby Card Details) */}
+                              <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 text-left space-y-0.5">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    📅 Nacimiento
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                    {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric"
+                                    }) : "—"}
+                                  </p>
+                                </div>
+
+                                <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 text-left space-y-0.5">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    ⚖️ Último Peso
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                    {growthEntries.length > 0 
+                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
+                                      : "—"}
+                                  </p>
+                                </div>
+
+                                <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 text-left space-y-0.5">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    📏 Última Altura
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                    {growthEntries.length > 0 
+                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
+                                      : "—"}
+                                  </p>
+                                </div>
+
+                                <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 text-left space-y-0.5">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    🧠 Perím. Cefálico
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                    {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
+                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
+                                      : "—"}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Allergies and restricted items lists inside profile presentation */}
+                              <div className="space-y-2.5 pt-1">
+                                {/* Allergies row */}
+                                <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 text-left space-y-1">
+                                  <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                    ⚠️ Alergias Registradas
+                                  </h4>
+                                  <div className="flex flex-wrap gap-1">
+                                    {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
+                                      activeBaby.allergies.map(alg => (
+                                        <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
+                                          {alg}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Restrictions row */}
+                                <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 text-left space-y-1">
+                                  <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                                    🚫 Alimentos Restringidos
+                                  </h4>
+                                  <div className="flex flex-wrap gap-1">
+                                    {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
+                                      activeBaby.restrictedFoods.map(food => (
+                                        <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
+                                          {food}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">Ninguno restringido</span>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Preferences row */}
+                                <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/20 text-left space-y-1">
+                                  <h4 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
+                                    ⭐ Preferencias o Favoritos
+                                  </h4>
+                                  <div className="flex flex-wrap gap-1">
+                                    {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
+                                      activeBaby.preferences.map(pref => (
+                                        <span key={pref} className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
+                                          {pref}
+                                        </span>
+                                      ))
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">Sin preferencias guardadas</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Pediatric observations block */}
+                              {activeBaby?.observations && (
+                                <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800 text-left">
+                                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                                    📝 Notas / Observaciones Especiales
+                                  </span>
+                                  <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                                    &ldquo;{activeBaby.observations}&rdquo;
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Growth chart curves */}
+                            <div className="space-y-2">
+                              <div className="flex justify-between items-center px-1">
+                                <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">Curvas de Crecimiento Oficiales</h3>
+                                <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2 py-0.5 rounded-full font-bold">
+                                  Carnet de Vacunación 📊
+                                </span>
+                              </div>
+
+                              <GrowthChart
+                                entries={growthEntries}
+                                onAddEntry={handleAddGrowthEntry}
+                                onDeleteEntry={handleDeleteGrowthEntry}
+                                birthDate={activeBaby?.birthDate}
                               />
-
-                              <button
-                                onClick={() => {
-                                  handleStartEditBaby();
-                                  setActiveTab("profile");
-                                }}
-                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
-                              >
-                                <Edit3 className="w-3 h-3" />
-                                <span>Editar</span>
-                              </button>
-
-                              <button
-                                onClick={handleDeleteBaby}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                                <span>Eliminar</span>
-                              </button>
                             </div>
-                          </div>
-
-                          {/* Profile Stats Grid (Baby Card Details) */}
-                          <div className="grid grid-cols-2 gap-3">
-                            <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 text-left space-y-0.5">
-                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                                📅 Nacimiento
-                              </span>
-                              <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
-                                  year: "numeric",
-                                  month: "short",
-                                  day: "numeric"
-                                }) : "—"}
-                              </p>
-                            </div>
-
-                            <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 text-left space-y-0.5">
-                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                                ⚖️ Último Peso
-                              </span>
-                              <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                {growthEntries.length > 0 
-                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
-                                  : "—"}
-                              </p>
-                            </div>
-
-                            <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 text-left space-y-0.5">
-                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                                📏 Última Altura
-                              </span>
-                              <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                {growthEntries.length > 0 
-                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
-                                  : "—"}
-                              </p>
-                            </div>
-
-                            <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 text-left space-y-0.5">
-                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
-                                🧠 Perím. Cefálico
-                              </span>
-                              <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
-                                  ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
-                                  : "—"}
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Allergies and restricted items lists inside profile presentation */}
-                          <div className="space-y-2.5 pt-1">
-                            {/* Allergies row */}
-                            <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 text-left space-y-1">
-                              <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
-                                ⚠️ Alergias Registradas
-                              </h4>
-                              <div className="flex flex-wrap gap-1">
-                                {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
-                                  activeBaby.allergies.map(alg => (
-                                    <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
-                                      {alg}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Restrictions row */}
-                            <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 text-left space-y-1">
-                              <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
-                                🚫 Alimentos Restringidos
-                              </h4>
-                              <div className="flex flex-wrap gap-1">
-                                {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
-                                  activeBaby.restrictedFoods.map(food => (
-                                    <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
-                                      {food}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">Ninguno restringido</span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Preferences row */}
-                            <div className="p-3 bg-emerald-50/30 dark:bg-emerald-950/10 rounded-xl border border-emerald-100/20 text-left space-y-1">
-                              <h4 className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide flex items-center gap-1">
-                                ⭐ Preferencias o Favoritos
-                              </h4>
-                              <div className="flex flex-wrap gap-1">
-                                {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
-                                  activeBaby.preferences.map(pref => (
-                                    <span key={pref} className="text-[9px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-md font-bold">
-                                      {pref}
-                                    </span>
-                                  ))
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">Sin preferencias guardadas</span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Pediatric observations block */}
-                          {activeBaby?.observations && (
-                            <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800 text-left">
-                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
-                                📝 Notas / Observaciones Especiales
-                              </span>
-                              <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
-                                &ldquo;{activeBaby.observations}&rdquo;
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Growth chart curves */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center px-1">
-                            <h3 className="font-display font-bold text-md text-slate-800 dark:text-white">Curvas de Crecimiento Oficiales</h3>
-                            <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2 py-0.5 rounded-full font-bold">
-                              Carnet de Vacunación 📊
-                            </span>
-                          </div>
-
-                          <GrowthChart
-                            entries={growthEntries}
-                            onAddEntry={handleAddGrowthEntry}
-                            onDeleteEntry={handleDeleteGrowthEntry}
-                            birthDate={activeBaby?.birthDate}
-                          />
-                        </div>
+                          </>
+                        )}
                       </div>
                     )}
 
@@ -3074,251 +3233,74 @@ export default function App() {
                 </div>
               )}
 
-              {/* --- VIEW: BABY PROFILE & WEIGHT LOGS --- */}
-              {activeTab === "profile" && (
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Baby Profile Info */}
-                    <div className="lg:col-span-1 space-y-6">
-                      <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4 text-center">
-                        <div className="relative group w-24 h-24 mx-auto">
-                          {activeBaby?.photoUrl ? (
-                            <img
-                              src={activeBaby.photoUrl}
-                              alt={activeBaby.name}
-                              className="w-24 h-24 mx-auto rounded-full object-cover border-4 border-pink-100 shadow-sm"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <div className={`w-24 h-24 mx-auto rounded-full ${activeBaby?.photoColor || "bg-pink-100"} flex items-center justify-center text-4xl shadow-sm`}>
-                              👶
-                            </div>
-                          )}
-                          <label className="absolute bottom-0 right-0 p-1.5 bg-pink-400 hover:bg-pink-500 text-white rounded-full cursor-pointer transition-colors shadow-xs">
-                            <span className="text-[10px] font-bold">📷</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              onChange={handlePhotoChange}
-                              className="hidden"
-                            />
-                          </label>
-                        </div>
+              {/* --- VIEW: INQUIETUDES / CONSULTAS --- */}
+              {activeTab === "inquietudes" && (
+                <div className="space-y-6 text-left">
+                  {/* Explanatory Header Card */}
+                  <div className="bg-gradient-to-r from-pink-500/10 via-purple-500/10 to-sky-500/10 dark:from-pink-950/20 dark:via-purple-950/20 dark:to-sky-950/20 p-6 rounded-3xl border border-pink-100/30 dark:border-pink-950/40 space-y-3">
+                    <h2 className="font-display font-extrabold text-lg text-slate-800 dark:text-white flex items-center gap-2">
+                      <HelpCircle className="w-5.5 h-5.5 text-pink-500" />
+                      Inquietudes de Mamá
+                    </h2>
+                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                      Escribe cualquier duda o pregunta sobre la alimentación de tu bebé (nutrición, recetas, vacunas, cólicos, etc.). Te ayudaremos a buscar al instante la mejor información respaldada por expertos en Google.
+                    </p>
+                  </div>
 
-                        <div>
-                          <h3 className="font-display font-bold text-lg text-slate-800 dark:text-white">{activeBaby?.name}</h3>
-                          <p className="text-xs text-slate-400">
-                            Fecha de Nacimiento: {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
-                              year: "numeric",
-                              month: "long",
-                              day: "numeric"
-                            }) : "—"}
-                          </p>
-                          <span className="inline-block mt-2 text-xs bg-emerald-500 text-white px-3 py-1 rounded-full font-bold">
-                            {babyAge.text}
-                          </span>
-                        </div>
-
-                        <div className="text-xs text-left space-y-3 pt-4 border-t border-slate-100 dark:border-slate-700">
-                          <div>
-                            <span className="font-bold text-slate-500 block mb-0.5">Alergias</span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {activeBaby?.allergies.map(alg => (
-                                <span key={alg} className="bg-rose-100 text-rose-700 dark:bg-rose-950 text-[10px] px-2 py-0.5 rounded-md font-bold">
-                                  {alg}
-                                </span>
-                              ))}
-                              {activeBaby?.allergies.length === 0 && <span className="text-slate-400">Ninguna</span>}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="font-bold text-slate-500 block mb-0.5">Preferencias</span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {activeBaby?.preferences.map(pref => (
-                                <span key={pref} className="bg-teal-100 text-teal-700 dark:bg-teal-950 text-[10px] px-2 py-0.5 rounded-md font-bold">
-                                  {pref}
-                                </span>
-                              ))}
-                              {activeBaby?.preferences.length === 0 && <span className="text-slate-400">Ninguna</span>}
-                            </div>
-                          </div>
-                          <div>
-                            <span className="font-bold text-slate-500 block mb-0.5">Restringidos</span>
-                            <p className="text-[11px] text-slate-500">{activeBaby?.restrictedFoods.join(", ") || "Ninguno"}</p>
-                          </div>
-                          <div>
-                            <span className="font-bold text-slate-500 block mb-0.5">Observaciones</span>
-                            <p className="text-[11px] text-slate-500 italic">{activeBaby?.observations || "—"}</p>
-                          </div>
-                        </div>
-
-                        {/* Profile action buttons */}
-                        <div className="grid grid-cols-2 gap-2 pt-2">
-                          <button
-                            onClick={handleStartEditBaby}
-                            className="py-2 bg-sky-50 hover:bg-sky-100 text-sky-700 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-sky-300 rounded-xl text-xs font-bold transition-all border border-sky-100 dark:border-transparent cursor-pointer"
-                          >
-                            Editar Datos
-                          </button>
-                          <button
-                            onClick={handleDeleteBaby}
-                            className="py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 dark:bg-slate-700 dark:hover:bg-slate-600 dark:text-rose-400 rounded-xl text-xs font-bold transition-all border border-rose-100 dark:border-transparent cursor-pointer"
-                          >
-                            Eliminar
-                          </button>
-                        </div>
-
-                        <button
-                          onClick={() => {
-                            setIsAddingBaby(true);
-                            setIsEditingBaby(false);
-                          }}
-                          className="w-full mt-2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                        >
-                          Crear Nuevo Perfil de Bebé
-                        </button>
+                  {/* Form Container */}
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm space-y-4">
+                    <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">¿Cuál es tu duda hoy?</h3>
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        if (inquiryQuery.trim()) {
+                          window.open(`https://www.google.com/search?q=${encodeURIComponent(inquiryQuery.trim())}`, "_blank");
+                        }
+                      }} 
+                      className="space-y-4"
+                    >
+                      <div>
+                        <textarea
+                          value={inquiryQuery}
+                          onChange={(e) => setInquiryQuery(e.target.value)}
+                          placeholder="Ej: ¿A qué edad puede comer fresas un bebé? / Recetas saludables de papillas de brócoli..."
+                          className="w-full text-xs p-4 bg-slate-50 dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-2xl focus:outline-none focus:ring-1 focus:ring-pink-400 h-28 text-slate-800 dark:text-white leading-relaxed"
+                          required
+                        />
                       </div>
+                      
+                      <button
+                        type="submit"
+                        className="w-full py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-2xl text-xs font-bold transition-all shadow-xs hover:shadow-md cursor-pointer flex items-center justify-center gap-2"
+                      >
+                        <span>🔍 Buscar Respuestas en Google</span>
+                      </button>
+                    </form>
+                  </div>
 
-                      {/* --- FORM: EDIT PROFILE --- */}
-                      {isEditingBaby && (
-                        <form onSubmit={handleSaveEditBaby} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-sky-200 dark:border-slate-700 shadow-sm space-y-3 animate-in fade-in slide-in-from-top-4 duration-300">
-                          <div className="flex justify-between items-center mb-2">
-                            <h4 className="text-xs font-bold text-sky-600 dark:text-sky-400">Editar Perfil</h4>
-                            <button onClick={() => setIsEditingBaby(false)} type="button" className="cursor-pointer">
-                              <X className="w-4 h-4 text-slate-400" />
-                            </button>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre</label>
-                            <input
-                              type="text"
-                              value={editBabyName}
-                              onChange={e => setEditBabyName(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nacimiento</label>
-                            <input
-                              type="date"
-                              value={editBabyBirth}
-                              onChange={e => setEditBabyBirth(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Alergias (separadas por comas)</label>
-                            <input
-                              type="text"
-                              value={editBabyAllergies}
-                              onChange={e => setEditBabyAllergies(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Preferencias (separadas por comas)</label>
-                            <input
-                              type="text"
-                              value={editBabyPrefs}
-                              onChange={e => setEditBabyPrefs(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Restringidos (separadas por comas)</label>
-                            <input
-                              type="text"
-                              value={editBabyRestrictions}
-                              onChange={e => setEditBabyRestrictions(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Observaciones</label>
-                            <textarea
-                              value={editBabyObs}
-                              onChange={e => setEditBabyObs(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 dark:bg-slate-700 border rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 h-16 text-slate-800 dark:text-white"
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            className="w-full py-2 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold cursor-pointer"
-                          >
-                            Guardar Cambios
-                          </button>
-                        </form>
-                      )}
-
-                      {isAddingBaby && (
-                        <form onSubmit={handleAddBabyProfile} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-3">
-                          <div className="flex justify-between items-center mb-2">
-                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-200">Nuevo Perfil</h4>
-                            <button onClick={() => setIsAddingBaby(false)} type="button">
-                              <X className="w-4 h-4 text-slate-400" />
-                            </button>
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nombre</label>
-                            <input
-                              type="text"
-                              value={newBabyName}
-                              onChange={e => setNewBabyName(e.target.value)}
-                              placeholder="Ej: Sofía"
-                              className="w-full text-xs p-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Nacimiento</label>
-                            <input
-                              type="date"
-                              value={newBabyBirth}
-                              onChange={e => setNewBabyBirth(e.target.value)}
-                              className="w-full text-xs p-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                              required
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Alergias (separadas por comas)</label>
-                            <input
-                              type="text"
-                              value={newBabyAllergies}
-                              onChange={e => setNewBabyAllergies(e.target.value)}
-                              placeholder="Ej: Huevo, Lácteos"
-                              className="w-full text-xs p-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-medium text-slate-500 mb-0.5">Preferencias (separadas por comas)</label>
-                            <input
-                              type="text"
-                              value={newBabyPrefs}
-                              onChange={e => setNewBabyPrefs(e.target.value)}
-                              placeholder="Ej: Plátano, Aguacate"
-                              className="w-full text-xs p-2 bg-slate-50 border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400"
-                            />
-                          </div>
-                          <button
-                            type="submit"
-                            className="w-full py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold"
-                          >
-                            Crear Perfil
-                          </button>
-                        </form>
-                      )}
-                    </div>
-
-                    {/* Weight & growth tracking right column */}
-                    <div className="lg:col-span-2">
-                      <GrowthChart
-                        entries={growthEntries}
-                        onAddEntry={handleAddGrowthEntry}
-                        onDeleteEntry={handleDeleteGrowthEntry}
-                        birthDate={activeBaby?.birthDate}
-                      />
+                  {/* Frequently Searched Topics Quick-Tags */}
+                  <div className="space-y-3 pl-1">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preguntas Frecuentes de Otras Mamás</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        "¿Cuándo empezar alimentación complementaria?",
+                        "¿Cómo introducir el huevo de forma segura?",
+                        "Alimentos prohibidos antes del primer año",
+                        "Recetas de cenas ligeras para bebé de 8 meses",
+                        "¿Qué hacer si mi bebé rechaza los sólidos?",
+                        "Texturas seguras método BLW"
+                      ].map((topic) => (
+                        <button
+                          key={topic}
+                          onClick={() => {
+                            setInquiryQuery(topic);
+                            window.open(`https://www.google.com/search?q=${encodeURIComponent(topic)}`, "_blank");
+                          }}
+                          className="px-3.5 py-2 bg-slate-50 hover:bg-pink-50 dark:bg-slate-800 dark:hover:bg-pink-950/20 text-slate-600 dark:text-slate-300 hover:text-pink-600 dark:hover:text-pink-400 border border-slate-200/50 dark:border-slate-700/80 rounded-xl text-[11px] font-medium transition-all text-left cursor-pointer"
+                        >
+                          {topic} →
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -3432,7 +3414,7 @@ export default function App() {
               { id: "meal-planner", label: "Menú", icon: Calendar, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
               { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
               { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
-              { id: "profile", label: "Bebé", icon: User, color: "bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border-rose-200" },
+              { id: "inquietudes", label: "Consultas", icon: HelpCircle, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
               { id: "statistics", label: "Métricas", icon: BarChart2, color: "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200" }
             ].map(item => {
               const IconComponent = item.icon;
