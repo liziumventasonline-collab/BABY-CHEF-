@@ -315,50 +315,89 @@ export default function App() {
 
   // --- LocalStorage Synchronization & Setup ---
   useEffect(() => {
-    const checkUrlAuth = () => {
+    const checkUrlAuth = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
+        
         // We accept any parameter indicating a payment or active license/access
-        const hasAuthParam = 
-          urlParams.has("acceso") || 
-          urlParams.has("token") || 
-          urlParams.has("key") || 
-          urlParams.has("code") || 
-          urlParams.has("licencia") || 
-          urlParams.has("access");
+        const paramKeys = ["acceso", "token", "key", "code", "licencia", "access"];
+        let foundKey = "";
+        for (const pKey of paramKeys) {
+          if (urlParams.has(pKey)) {
+            foundKey = urlParams.get(pKey) || "";
+            break;
+          }
+        }
 
-        if (hasAuthParam) {
-          // Grant access!
-          localStorage.setItem("babychef_is_authorized", "true");
-          setIsAuthorized(true);
+        if (foundKey) {
+          // Send request to server to register/claim this key for this device (first-time locks to this device)
+          try {
+            const data = await apiFetch("/api/claim-access", {
+              method: "POST",
+              body: JSON.stringify({ key: foundKey, deviceId })
+            });
+
+            if (data && data.authorized) {
+              // Access granted!
+              localStorage.setItem("babychef_is_authorized", "true");
+              localStorage.setItem("babychef_access_key", foundKey.trim().toLowerCase());
+              setIsAuthorized(true);
+            } else {
+              // Access denied
+              localStorage.removeItem("babychef_is_authorized");
+              localStorage.removeItem("babychef_access_key");
+              setIsAuthorized(false);
+            }
+          } catch (apiErr) {
+            console.error("Error claiming access via URL:", apiErr);
+            localStorage.removeItem("babychef_is_authorized");
+            localStorage.removeItem("babychef_access_key");
+            setIsAuthorized(false);
+          }
           
           // Clean the query parameters from the address bar so they can't forward it easily!
           const cleanUrl = new URL(window.location.href);
-          cleanUrl.searchParams.delete("acceso");
-          cleanUrl.searchParams.delete("token");
-          cleanUrl.searchParams.delete("key");
-          cleanUrl.searchParams.delete("code");
-          cleanUrl.searchParams.delete("licencia");
-          cleanUrl.searchParams.delete("access");
+          paramKeys.forEach(pKey => cleanUrl.searchParams.delete(pKey));
           window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
         } else {
-          // Check localStorage
-          const isAuthed = localStorage.getItem("babychef_is_authorized") === "true";
-          if (isAuthed) {
-            setIsAuthorized(true);
+          // No access parameter in URL, check localStorage
+          const savedKey = localStorage.getItem("babychef_access_key");
+          const isAuthedLocal = localStorage.getItem("babychef_is_authorized") === "true";
+
+          if (savedKey) {
+            // Verify key is still valid and authorized for this device
+            try {
+              const data = await apiFetch("/api/check-access", {
+                method: "POST",
+                body: JSON.stringify({ key: savedKey, deviceId })
+              });
+              if (data && data.authorized) {
+                localStorage.setItem("babychef_is_authorized", "true");
+                setIsAuthorized(true);
+              } else {
+                localStorage.removeItem("babychef_is_authorized");
+                localStorage.removeItem("babychef_access_key");
+                setIsAuthorized(false);
+              }
+            } catch (err) {
+              console.error("Offline fallback verification:", err);
+              // Fallback to local storage state for offline usage
+              setIsAuthorized(isAuthedLocal);
+            }
           } else {
+            // No key saved
             setIsAuthorized(false);
           }
         }
       } catch (err) {
         console.error("Error verifying authorization:", err);
-        setIsAuthorized(true); // Default to true as a safe fallback
+        setIsAuthorized(localStorage.getItem("babychef_is_authorized") === "true");
       } finally {
         setIsVerifyingDevice(false);
       }
     };
     checkUrlAuth();
-  }, []);
+  }, [deviceId]);
 
   // --- Admin Logic ---
   const handleAdminLogin = async (e: FormEvent) => {
@@ -871,22 +910,22 @@ export default function App() {
           </button>
 
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="w-20 h-20 bg-pink-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-pink-100 text-pink-500 shadow-sm">
-              👶✨
+            <div className="w-20 h-20 bg-rose-50 rounded-3xl flex items-center justify-center text-4xl mx-auto border border-rose-100 text-rose-500 shadow-sm animate-pulse">
+              ⚠💔
             </div>
 
             <div className="space-y-3">
-              <h2 className="font-display font-extrabold text-2xl text-slate-800">
-                ¡Acceso Exclusivo! 💕
+              <h2 className="font-display font-extrabold text-xl text-rose-600">
+                ¡No cuentas con la versión original! 💔
               </h2>
               <p className="text-xs text-slate-500 leading-relaxed px-4">
-                Esta es una versión privada y exclusiva de <strong>BabyChef</strong>. Para acceder a tu recetario oficial, planificadores semanales y asistente con Inteligencia Artificial, debes ingresar mediante tu enlace de acceso personalizado.
+                Este enlace de acceso ya ha sido activado en otro dispositivo o ha sido compartido/reenviado de forma no autorizada. Cada licencia original de <strong>BabyChef</strong> es para uso personal y exclusivo de un solo teléfono móvil.
               </p>
             </div>
 
             <div className="pt-4 border-t border-slate-100 space-y-3.5">
               <p className="text-xs text-slate-500 font-medium leading-normal px-2">
-                Si aún no has adquirido tu versión original, puedes contactarnos haciendo clic en el botón de abajo:
+                Para adquirir tu propia versión original con tu recetario completo, planificador semanal y asistente con Inteligencia Artificial, contáctanos haciendo clic en el botón de abajo:
               </p>
               
               <a
@@ -1001,13 +1040,13 @@ export default function App() {
                     {/* Pre-Authorization addition section */}
                     <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
                       <h4 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-2">
-                        Pre-Autorizar Correo de Cliente Nuevo
+                        Pre-Autorizar Enlace o Código de Acceso Nuevo
                       </h4>
                       <form onSubmit={handleAdminAddClientSubmit} className="flex gap-2">
                         <input
-                          type="email"
+                          type="text"
                           required
-                          placeholder="cliente@correo.com"
+                          placeholder="ej: maria123, clave_secreta, pedro@correo.com..."
                           value={adminNewClientEmail}
                           onChange={e => setAdminNewClientEmail(e.target.value)}
                           className="flex-1 text-xs p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none text-slate-800 dark:text-white"
@@ -1021,7 +1060,7 @@ export default function App() {
                         </button>
                       </form>
                       <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1.5">
-                        Si registras el correo de tu cliente aquí, podrá acceder inmediatamente al abrir la aplicación sin necesidad de esperar aprobación.
+                        Registra aquí el código que usarás en el enlace (ej: si registras <code className="font-mono">maria123</code>, tu cliente accederá usando el enlace con <code className="font-mono">?acceso=maria123</code>). Al abrirlo por primera vez, se vinculará a su celular y nadie más podrá usar ese enlace.
                       </p>
                     </div>
 

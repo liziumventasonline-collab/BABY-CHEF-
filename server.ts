@@ -133,23 +133,23 @@ async function startServer() {
     res.json({ status: "ok", time: new Date().toISOString() });
   });
 
-  // --- NEW EMAIL AUTHORIZATION SYSTEM ENDPOINTS ---
+  // --- SECURE LINK ACCESS SYSTEM ENDPOINTS ---
 
-  // Register or check a client's email
-  app.post("/api/register-email", (req, res) => {
-    const { email, deviceId } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "El correo electrónico es obligatorio" });
+  // Claim access using an original link token or code (locks to the claiming device)
+  app.post("/api/claim-access", (req, res) => {
+    const { key, deviceId } = req.body;
+    if (!key) {
+      return res.status(400).json({ error: "El código de acceso es obligatorio" });
     }
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedKey = key.trim().toLowerCase();
     const regs = getRegistrations();
 
     // Check if the administrator is registering
-    if (normalizedEmail === "liziumventasonline@gmail.com") {
-      let adminReg = regs.find(r => r.email === normalizedEmail);
+    if (normalizedKey === "liziumventasonline@gmail.com") {
+      let adminReg = regs.find(r => r.email === normalizedKey);
       if (!adminReg) {
         adminReg = {
-          email: normalizedEmail,
+          email: normalizedKey,
           status: "authorized",
           deviceId: deviceId || null,
           registeredAt: new Date().toISOString(),
@@ -158,63 +158,70 @@ async function startServer() {
         regs.push(adminReg);
         saveRegistrations(regs);
       }
-      return res.json({ success: true, status: "authorized", isDeviceMatched: true });
+      return res.json({ success: true, authorized: true });
     }
 
-    let reg = regs.find(r => r.email === normalizedEmail);
+    let reg = regs.find(r => r.email === normalizedKey);
 
     if (!reg) {
-      // Create new pending registration
+      // Automatic authorization on first-time use of any original link
       reg = {
-        email: normalizedEmail,
-        status: "pending",
+        email: normalizedKey,
+        status: "authorized",
         deviceId: deviceId || null,
         registeredAt: new Date().toISOString(),
-        authorizedAt: null
+        authorizedAt: new Date().toISOString()
       };
       regs.push(reg);
       saveRegistrations(regs);
-      return res.json({ success: true, status: "pending", isDeviceMatched: true });
+      return res.json({ success: true, authorized: true, message: "Acceso registrado y autorizado para este dispositivo." });
     } else {
-      // Email already exists
-      // If it has no deviceId bound yet, bind it to this deviceId!
+      // The access code is already registered in our database
       if (!reg.deviceId && deviceId) {
+        // If it was registered but had no device associated yet, bind it now!
         reg.deviceId = deviceId;
+        reg.status = "authorized";
+        reg.authorizedAt = new Date().toISOString();
         saveRegistrations(regs);
+        return res.json({ success: true, authorized: true, message: "Acceso vinculado a este dispositivo." });
       }
 
-      // Check if deviceId matches (prevents multiple people sharing the same email)
-      const isDeviceMatched = !reg.deviceId || reg.deviceId === deviceId;
+      const isDeviceMatched = reg.deviceId === deviceId;
+      const authorized = reg.status === "authorized";
 
-      return res.json({ 
-        success: true, 
-        status: reg.status, 
-        isDeviceMatched, 
-        message: isDeviceMatched ? "" : "Este correo electrónico ya está registrado en otro dispositivo."
-      });
+      if (isDeviceMatched) {
+        return res.json({ success: authorized, authorized, isDeviceMatched: true });
+      } else {
+        // Device mismatch! The link was forwarded or opened on a different phone.
+        return res.status(403).json({ 
+          success: false, 
+          authorized: false, 
+          isDeviceMatched: false, 
+          error: "Este enlace de acceso original ya fue activado en otro dispositivo celular. Cada licencia de BabyChef es para uso exclusivo en un solo teléfono móvil. Si cambiaste de celular, por favor solicita un reinicio al administrador." 
+        });
+      }
     }
   });
 
-  // Check current email status
-  app.post("/api/check-email", (req, res) => {
-    const { email, deviceId } = req.body;
-    if (!email) {
-      return res.status(400).json({ error: "El correo electrónico es obligatorio" });
+  // Verify access state on mount (for saved keys)
+  app.post("/api/check-access", (req, res) => {
+    const { key, deviceId } = req.body;
+    if (!key) {
+      return res.status(400).json({ error: "El código de acceso es obligatorio" });
     }
-    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedKey = key.trim().toLowerCase();
     const regs = getRegistrations();
-    const reg = regs.find(r => r.email === normalizedEmail);
+    const reg = regs.find(r => r.email === normalizedKey);
 
     if (!reg) {
-      return res.json({ authorized: false, status: "not_found", isDeviceMatched: false });
+      return res.json({ authorized: false, isDeviceMatched: false });
     }
 
     const authorized = reg.status === "authorized";
-    const isDeviceMatched = !reg.deviceId || reg.deviceId === deviceId;
+    const isDeviceMatched = reg.deviceId === deviceId || !reg.deviceId;
 
     return res.json({ 
       authorized: authorized && isDeviceMatched, 
-      status: reg.status,
       isDeviceMatched
     });
   });
