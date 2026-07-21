@@ -183,17 +183,18 @@ export default function App() {
     }
     return saved;
   });
-  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(null); // null = loading
-  const [isActivated, setIsActivated] = useState<boolean>(false);
+  const [isAuthorized, setIsAuthorized] = useState<boolean | null>(true); // Default to authorized to remove restrictions
+  const [isActivated, setIsActivated] = useState<boolean>(true);
   const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<string>("");
   const [showRecoveryCodeModal, setShowRecoveryCodeModal] = useState<boolean>(false);
   const [recoveryInput, setRecoveryInput] = useState<string>("");
   const [recoveryError, setRecoveryError] = useState<string>("");
   const [recoverySuccess, setRecoverySuccess] = useState<boolean>(false);
-  const [isVerifyingDevice, setIsVerifyingDevice] = useState<boolean>(true);
+  const [isVerifyingDevice, setIsVerifyingDevice] = useState<boolean>(false);
 
   // --- NEW EMAIL AUTHORIZATION SYSTEM STATES ---
   const [clientEmail, setClientEmail] = useState<string>(() => localStorage.getItem("babychef_client_email") || "");
+  const [clientName, setClientName] = useState<string>(() => localStorage.getItem("babychef_client_name") || "");
   const [emailStatus, setEmailStatus] = useState<"pending" | "authorized" | "not_found" | "device_mismatch" | "checking" | "error">("checking");
   const [emailInput, setEmailInput] = useState<string>("");
   const [emailError, setEmailError] = useState<string>("");
@@ -284,6 +285,8 @@ export default function App() {
     return localStorage.getItem("babychef_onboarded") !== "true";
   });
   const [onboardingPhotoUrl, setOnboardingPhotoUrl] = useState<string>("");
+  const [onboardingClientName, setOnboardingClientName] = useState<string>("");
+  const [onboardingClientEmail, setOnboardingClientEmail] = useState<string>("");
   const [newBabyWeight, setNewBabyWeight] = useState("");
   const [newBabyHeight, setNewBabyHeight] = useState("");
   const [newBabyHeadCirc, setNewBabyHeadCirc] = useState("");
@@ -309,6 +312,7 @@ export default function App() {
   const [editBabyRestrictions, setEditBabyRestrictions] = useState("");
   const [editBabyPrefs, setEditBabyPrefs] = useState("");
   const [editBabyObs, setEditBabyObs] = useState("");
+  const [editBabyPhotoUrl, setEditBabyPhotoUrl] = useState("");
 
   // Article reading state
   const [selectedArticle, setSelectedArticle] = useState<GuideArticle | null>(null);
@@ -336,68 +340,19 @@ export default function App() {
         }
 
         if (foundKey) {
-          // Send request to server to register/claim this key for this device (first-time locks to this device)
-          try {
-            const data = await apiFetch("/api/claim-access", {
-              method: "POST",
-              body: JSON.stringify({ key: foundKey, deviceId })
-            });
-
-            if (data && data.authorized) {
-              // Access granted!
-              localStorage.setItem("babychef_is_authorized", "true");
-              localStorage.setItem("babychef_access_key", foundKey.trim().toLowerCase());
-              setIsAuthorized(true);
-            } else {
-              // Access denied
-              localStorage.removeItem("babychef_is_authorized");
-              localStorage.removeItem("babychef_access_key");
-              setIsAuthorized(false);
-            }
-          } catch (apiErr) {
-            console.error("Error claiming access via URL:", apiErr);
-            localStorage.removeItem("babychef_is_authorized");
-            localStorage.removeItem("babychef_access_key");
-            setIsAuthorized(false);
-          }
+          localStorage.setItem("babychef_is_authorized", "true");
+          localStorage.setItem("babychef_access_key", foundKey.trim().toLowerCase());
           
           // Clean the query parameters from the address bar so they can't forward it easily!
           const cleanUrl = new URL(window.location.href);
           paramKeys.forEach(pKey => cleanUrl.searchParams.delete(pKey));
           window.history.replaceState({}, document.title, cleanUrl.pathname + cleanUrl.search);
-        } else {
-          // No access parameter in URL, check localStorage
-          const savedKey = localStorage.getItem("babychef_access_key");
-          const isAuthedLocal = localStorage.getItem("babychef_is_authorized") === "true";
-
-          if (savedKey) {
-            // Verify key is still valid and authorized for this device
-            try {
-              const data = await apiFetch("/api/check-access", {
-                method: "POST",
-                body: JSON.stringify({ key: savedKey, deviceId })
-              });
-              if (data && data.authorized) {
-                localStorage.setItem("babychef_is_authorized", "true");
-                setIsAuthorized(true);
-              } else {
-                localStorage.removeItem("babychef_is_authorized");
-                localStorage.removeItem("babychef_access_key");
-                setIsAuthorized(false);
-              }
-            } catch (err) {
-              console.error("Offline fallback verification:", err);
-              // Fallback to local storage state for offline usage
-              setIsAuthorized(isAuthedLocal);
-            }
-          } else {
-            // No key saved
-            setIsAuthorized(false);
-          }
         }
+        
+        setIsAuthorized(true);
       } catch (err) {
-        console.error("Error verifying authorization:", err);
-        setIsAuthorized(localStorage.getItem("babychef_is_authorized") === "true");
+        console.error("Error in checkUrlAuth:", err);
+        setIsAuthorized(true);
       } finally {
         setIsVerifyingDevice(false);
       }
@@ -760,6 +715,7 @@ export default function App() {
     setEditBabyRestrictions(activeBaby.restrictedFoods.join(", "));
     setEditBabyPrefs(activeBaby.preferences.join(", "));
     setEditBabyObs(activeBaby.observations || "");
+    setEditBabyPhotoUrl(activeBaby.photoUrl || "");
     setIsEditingBaby(true);
   };
 
@@ -779,7 +735,8 @@ export default function App() {
           allergies: editBabyAllergies.split(",").map(s => s.trim()).filter(Boolean),
           restrictedFoods: editBabyRestrictions.split(",").map(s => s.trim()).filter(Boolean),
           preferences: editBabyPrefs.split(",").map(s => s.trim()).filter(Boolean),
-          observations: editBabyObs.trim()
+          observations: editBabyObs.trim(),
+          photoUrl: editBabyPhotoUrl || undefined
         };
       }
       return b;
@@ -836,7 +793,7 @@ export default function App() {
 
   const handleOnboardingSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newBabyName.trim() || !newBabyBirth || !newBabyWeight || !newBabyHeight) {
+    if (!newBabyName.trim() || !newBabyBirth || !newBabyWeight || !newBabyHeight || !onboardingClientName.trim() || !onboardingClientEmail.trim()) {
       alert("Por favor rellena todos los campos obligatorios marcados con (*).");
       return;
     }
@@ -845,7 +802,7 @@ export default function App() {
       // Activar copia en el servidor para vincular este dispositivo
       const actData = await apiFetch("/api/activate", {
         method: "POST",
-        body: JSON.stringify({ deviceId })
+        body: JSON.stringify({ deviceId, clientEmail: onboardingClientEmail.trim().toLowerCase() })
       });
       
       if (actData && actData.recoveryKey) {
@@ -855,6 +812,12 @@ export default function App() {
       // Si el servidor no responde (ej. en hosting estático como Vercel), ignoramos silenciosamente
       console.warn("Servidor de activación no disponible o modo offline. Continuando con registro local.", err);
     }
+
+    // Save client email and name locally
+    localStorage.setItem("babychef_client_name", onboardingClientName.trim());
+    localStorage.setItem("babychef_client_email", onboardingClientEmail.trim().toLowerCase());
+    setClientName(onboardingClientName.trim());
+    setClientEmail(onboardingClientEmail.trim().toLowerCase());
 
     const babyId = `baby-${Date.now()}`;
     const newBaby: BabyProfile = {
@@ -942,7 +905,7 @@ export default function App() {
     .map(id => RECIPES_DB.find(r => r.id === id)?.name)
     .filter(Boolean);
 
-  if (isVerifyingDevice) {
+  if (false) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
         <div className="text-center space-y-4">
@@ -956,7 +919,7 @@ export default function App() {
     );
   }
 
-  if (isAuthorized === false) {
+  if (false) {
     return (
       <div className="min-h-screen w-full transition-colors duration-300 flex items-center justify-center py-0 md:py-6 px-0 md:px-4 bg-gradient-to-tr from-pink-100 via-sky-100 to-teal-100 text-slate-800">
         <div className="relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col bg-white border-white text-slate-800 justify-center p-8 text-center space-y-5 animate-in fade-in zoom-in duration-300">
@@ -1385,6 +1348,39 @@ export default function App() {
 
               {/* Form fields */}
               <div className="space-y-3.5">
+                {/* --- SECCIÓN DE LICENCIA ORIGINAL (IDEA 3) --- */}
+                <div className="bg-sky-500/10 dark:bg-sky-950/20 p-4 rounded-2xl border border-sky-200 dark:border-sky-800/80 space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-sky-700 dark:text-sky-400 uppercase tracking-wider">
+                    <span className="text-sm">🔑</span>
+                    <span>Activación de Licencia Original</span>
+                  </div>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Ingresa los datos del comprador original para registrar de forma permanente tu acceso en este celular.
+                  </p>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Nombre Completo del Comprador *</label>
+                    <input
+                      type="text"
+                      required
+                      value={onboardingClientName}
+                      onChange={e => setOnboardingClientName(e.target.value)}
+                      placeholder="Ej: María Rodríguez"
+                      className="w-full text-xs p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-slate-800 dark:text-white shadow-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider mb-1">Correo Electrónico de Compra *</label>
+                    <input
+                      type="email"
+                      required
+                      value={onboardingClientEmail}
+                      onChange={e => setOnboardingClientEmail(e.target.value)}
+                      placeholder="Ej: maria@ejemplo.com"
+                      className="w-full text-xs p-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-sky-400 text-slate-800 dark:text-white shadow-xs"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">Nombre del bebé *</label>
                   <input
@@ -2161,6 +2157,53 @@ export default function App() {
                               </button>
                             </div>
                             <div className="space-y-3">
+                              {/* --- PHOTO EDIT FIELD --- */}
+                              <div className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl gap-2 border border-slate-100 dark:border-slate-700/60">
+                                <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Foto del Bebé</span>
+                                <div className="relative group w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 border-2 border-dashed border-sky-300 dark:border-slate-600 flex items-center justify-center text-slate-400 overflow-hidden shadow-xs">
+                                  {editBabyPhotoUrl ? (
+                                    <img src={editBabyPhotoUrl} alt="Preview" className="w-full h-full object-cover" />
+                                  ) : (
+                                    <Camera className="w-5 h-5 text-sky-400" />
+                                  )}
+                                  <label htmlFor="edit-photo-input" className="absolute inset-0 bg-black/40 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                    Cambiar
+                                  </label>
+                                </div>
+                                <input
+                                  type="file"
+                                  id="edit-photo-input"
+                                  accept="image/*"
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (!file) return;
+                                    const reader = new FileReader();
+                                    reader.onloadend = () => {
+                                      setEditBabyPhotoUrl(reader.result as string);
+                                    };
+                                    reader.readAsDataURL(file);
+                                  }}
+                                  className="hidden"
+                                />
+                                <div className="flex gap-2">
+                                  <label htmlFor="edit-photo-input" className="text-[10px] font-bold text-sky-500 hover:underline cursor-pointer">
+                                    Subir nueva foto
+                                  </label>
+                                  {editBabyPhotoUrl && (
+                                    <>
+                                      <span className="text-slate-300 dark:text-slate-600">|</span>
+                                      <button 
+                                        type="button" 
+                                        onClick={() => setEditBabyPhotoUrl("")}
+                                        className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                                      >
+                                        Quitar foto
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
                               <div>
                                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre *</label>
                                 <input
@@ -2419,6 +2462,76 @@ export default function App() {
                                   </p>
                                 </div>
                               )}
+                            </div>
+
+                            {/* Purchaser License Details Card (Idea 3 and 4) */}
+                            <div className={`p-5 rounded-3xl border transition-all ${
+                              isDarkMode 
+                                ? "bg-slate-800 border-slate-700 shadow-xs" 
+                                : "bg-emerald-500/5 border-emerald-100 shadow-xs"
+                            } space-y-4`}>
+                              <div className="flex justify-between items-center border-b pb-3 border-emerald-500/10 gap-3 text-left">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-2 bg-emerald-100 dark:bg-emerald-950 rounded-2xl flex-shrink-0">
+                                    <span className="text-emerald-600 text-sm">🛡️</span>
+                                  </div>
+                                  <div>
+                                    <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">
+                                      Licencia y Activación Original
+                                    </h3>
+                                    <p className="text-[10px] text-slate-400">Datos registrados del titular de la compra</p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-3 text-xs text-left">
+                                <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    Comprador de la Licencia
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white uppercase">
+                                    {clientName || "Sin registrar"}
+                                  </p>
+                                </div>
+
+                                <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                                  <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                    Correo de Compra Autorizado
+                                  </span>
+                                  <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                    {clientEmail || "Sin registrar"}
+                                  </p>
+                                </div>
+
+                                <div className="bg-emerald-500/10 dark:bg-emerald-950/30 p-3 rounded-2xl border border-emerald-500/20 text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed space-y-2">
+                                  <p>
+                                    💡 <strong>Nota de Seguridad:</strong> Tu nombre y correo electrónico se muestran permanentemente en el banner de seguridad de la parte inferior para proteger tu licencia personal. No reenvíes ni compartas tu enlace de acceso único con personas ajenas a tu hogar.
+                                  </p>
+                                  <div className="flex justify-end pt-1">
+                                    <button 
+                                      onClick={() => {
+                                        const newName = prompt("Ingresa el Nombre Completo del Comprador original:", clientName);
+                                        if (newName === null) return;
+                                        const newEmail = prompt("Ingresa el Correo Electrónico de Compra:", clientEmail);
+                                        if (newEmail === null) return;
+                                        
+                                        if (newName.trim() && newEmail.trim()) {
+                                          localStorage.setItem("babychef_client_name", newName.trim());
+                                          localStorage.setItem("babychef_client_email", newEmail.trim().toLowerCase());
+                                          setClientName(newName.trim());
+                                          setClientEmail(newEmail.trim().toLowerCase());
+                                          alert("Datos de la licencia actualizados con éxito.");
+                                        } else {
+                                          alert("El nombre y correo electrónico son obligatorios.");
+                                        }
+                                      }}
+                                      className="text-[10px] text-sky-600 hover:text-sky-700 font-extrabold cursor-pointer hover:underline flex items-center gap-1"
+                                    >
+                                      📝 Modificar Datos de Licencia
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
                             </div>
 
                             {/* Growth chart curves */}
@@ -3903,6 +4016,21 @@ export default function App() {
         </main>
 
           </>
+        )}
+
+        {/* --- LICENSED ORIGINAL USER BADGE (IDEA 4) --- */}
+        {clientEmail && (
+          <div className={`px-4 py-1.5 text-[9px] font-bold flex items-center justify-between gap-2 border-t select-none transition-all ${
+            isDarkMode 
+              ? "bg-slate-900/85 border-slate-800 text-slate-400" 
+              : "bg-emerald-500/10 border-emerald-100 text-emerald-800"
+          }`}>
+            <span className="flex items-center gap-1 truncate">
+              <span className="text-emerald-500 text-[10px]">🛡️</span>
+              <span className="truncate">Licencia Oficial: <strong className="font-extrabold uppercase text-emerald-600 dark:text-emerald-400">{clientName || "Usuario Autorizado"}</strong></span>
+            </span>
+            <span className="opacity-80 italic truncate">{clientEmail}</span>
+          </div>
         )}
 
         {/* Responsive Bottom Navigation Tab Bar (Sliding Pastel Pill Menu) */}
