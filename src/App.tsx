@@ -265,10 +265,15 @@ export default function App() {
     const saved = localStorage.getItem("babychef_shopping_list");
     return saved ? JSON.parse(saved) : [];
   });
-  const [growthEntries, setGrowthEntries] = useState<GrowthEntry[]>(() => {
-    const saved = localStorage.getItem("babychef_growth_entries");
-    return saved ? JSON.parse(saved) : DEFAULT_GROWTH;
+  const [growthEntriesByBaby, setGrowthEntriesByBaby] = useState<{ [babyId: string]: GrowthEntry[] }>(() => {
+    const saved = localStorage.getItem("babychef_growth_by_baby");
+    if (saved) return JSON.parse(saved);
+    const oldEntries = localStorage.getItem("babychef_growth_entries");
+    const parsedOld = oldEntries ? JSON.parse(oldEntries) : DEFAULT_GROWTH;
+    return { "b1": parsedOld };
   });
+
+  const activeGrowthEntries = growthEntriesByBaby[activeBabyId] || [];
 
   // Active view states
   const [selectedRecipeId, setSelectedRecipeId] = useState<string | null>(null);
@@ -545,8 +550,8 @@ export default function App() {
   }, [shoppingList]);
 
   useEffect(() => {
-    localStorage.setItem("babychef_growth_entries", JSON.stringify(growthEntries));
-  }, [growthEntries]);
+    localStorage.setItem("babychef_growth_by_baby", JSON.stringify(growthEntriesByBaby));
+  }, [growthEntriesByBaby]);
 
   useEffect(() => {
     localStorage.setItem("babychef_pdf_shopping_checked", JSON.stringify(pdfShoppingChecked));
@@ -603,19 +608,15 @@ export default function App() {
     setShoppingList(list);
   };
 
-  // Auto-generate or update weekly menu automatically whenever the active baby or their age changes
+  // Auto-generate weekly menu only once on mount if the plan is currently empty
   useEffect(() => {
-    if (activeBaby) {
+    if (Object.keys(mealPlan).length === 0 && activeBaby) {
       const plan = generateBalancedWeeklyMenu(RECIPES_DB, effectiveAgeMonths);
       setMealPlan(plan);
       const list = generateShoppingListFromMenu(plan, RECIPES_DB);
       setShoppingList(list);
-
-      // Reset search and age filters to avoid stuck states
-      setAgeFilter("todos");
-      setSearchQuery("");
     }
-  }, [activeBabyId, activeBaby?.birthDate, effectiveAgeMonths]);
+  }, []);
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
@@ -663,11 +664,23 @@ export default function App() {
       headCircumference: headCirc,
       notes
     };
-    setGrowthEntries(prev => [...prev, newEntry]);
+    setGrowthEntriesByBaby(prev => {
+      const babyEntries = prev[activeBabyId] || [];
+      return {
+        ...prev,
+        [activeBabyId]: [...babyEntries, newEntry]
+      };
+    });
   };
 
   const handleDeleteGrowthEntry = (id: string) => {
-    setGrowthEntries(prev => prev.filter(e => e.id !== id));
+    setGrowthEntriesByBaby(prev => {
+      const babyEntries = prev[activeBabyId] || [];
+      return {
+        ...prev,
+        [activeBabyId]: babyEntries.filter(e => e.id !== id)
+      };
+    });
   };
 
   const handleAddBabyProfile = (e: FormEvent) => {
@@ -846,7 +859,7 @@ export default function App() {
       headCircumference: newBabyHeadCirc ? parseFloat(newBabyHeadCirc) : undefined,
       notes: "Registro de alta inicial de bienvenida 🧸"
     };
-    setGrowthEntries([initialGrowth]);
+    setGrowthEntriesByBaby({ [babyId]: [initialGrowth] });
 
     // Guardar estado en localStorage
     localStorage.setItem("babychef_onboarded", "true");
@@ -1291,7 +1304,7 @@ export default function App() {
       <div className="hidden lg:block absolute top-1/3 right-8 text-5xl opacity-30 select-none">🥣</div>
 
       {/* Interactive Mobile Device Container Mockup */}
-      <div className={`relative w-full md:max-w-[480px] h-screen md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col transition-all ${
+      <div className={`relative w-full md:max-w-[480px] h-[100dvh] md:h-[840px] md:rounded-[40px] md:shadow-2xl overflow-hidden border-0 md:border-[10px] flex flex-col transition-all ${
         isDarkMode 
           ? "bg-slate-900 border-slate-800 text-slate-100 shadow-slate-950/40" 
           : "bg-radial from-white via-pink-50/20 to-sky-50/20 border-white text-slate-800 shadow-pink-200/40"
@@ -1555,10 +1568,11 @@ export default function App() {
                 setIsAddingBaby(true);
                 setIsEditingBaby(false);
               }}
-              className="p-1 text-pink-400 hover:text-pink-500"
+              className="px-2.5 py-1 rounded-full text-[10px] font-bold transition-all bg-white/60 dark:bg-slate-800 text-pink-500 border border-pink-100 dark:border-slate-700 hover:bg-pink-50 dark:hover:bg-slate-700 flex items-center gap-1 cursor-pointer"
               title="Añadir Bebé"
             >
-              <PlusCircle className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
+              <span>Añadir</span>
             </button>
           </div>
         </div>
@@ -2365,8 +2379,8 @@ export default function App() {
                                     ⚖️ Último Peso
                                   </span>
                                   <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                    {growthEntries.length > 0 
-                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
+                                    {activeGrowthEntries.length > 0 
+                                      ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
                                       : "—"}
                                   </p>
                                 </div>
@@ -2376,8 +2390,8 @@ export default function App() {
                                     📏 Última Altura
                                   </span>
                                   <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                    {growthEntries.length > 0 
-                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
+                                    {activeGrowthEntries.length > 0 
+                                      ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
                                       : "—"}
                                   </p>
                                 </div>
@@ -2387,8 +2401,8 @@ export default function App() {
                                     🧠 Perím. Cefálico
                                   </span>
                                   <p className="text-xs font-bold text-slate-800 dark:text-white">
-                                    {growthEntries.length > 0 && [...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
-                                      ? `${[...growthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
+                                    {activeGrowthEntries.length > 0 && [...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
+                                      ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
                                       : "—"}
                                   </p>
                                 </div>
@@ -2544,7 +2558,7 @@ export default function App() {
                               </div>
 
                               <GrowthChart
-                                entries={growthEntries}
+                                entries={activeGrowthEntries}
                                 onAddEntry={handleAddGrowthEntry}
                                 onDeleteEntry={handleDeleteGrowthEntry}
                                 birthDate={activeBaby?.birthDate}
@@ -2600,13 +2614,14 @@ export default function App() {
                       <select
                         value={ageFilter}
                         onChange={e => setAgeFilter(e.target.value)}
-                        className="text-sm p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        className="text-sm p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 cursor-pointer"
                       >
                         <option value="todos">Cualquier Edad</option>
-                        {babyAge.months >= 6 && <option value="6 meses">6 meses</option>}
-                        {babyAge.months >= 9 && <option value="9 meses">9 meses</option>}
-                        {babyAge.months >= 12 && <option value="12 meses">12 meses</option>}
-                        {babyAge.months >= 18 && <option value="18 meses">18 meses</option>}
+                        <option value="6 meses">6 meses</option>
+                        <option value="9 meses">9 meses</option>
+                        <option value="12 meses">12 meses</option>
+                        <option value="18 meses">18 meses</option>
+                        <option value="24 meses">24 meses (2 años)</option>
                       </select>
 
                       <select
