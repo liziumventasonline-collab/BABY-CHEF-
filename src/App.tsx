@@ -299,6 +299,7 @@ export default function App() {
   // PWA Install Prompt states
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
 
   // Profile Form states
   const [isAddingBaby, setIsAddingBaby] = useState(false);
@@ -620,19 +621,20 @@ export default function App() {
 
   const handleInstallClick = async () => {
     if (deferredPrompt) {
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === "accepted") {
-        console.log("User accepted PWA installation");
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === "accepted") {
+          console.log("User accepted PWA installation");
+        }
+        setDeferredPrompt(null);
+        setShowInstallBtn(false);
+      } catch (err) {
+        console.error("Error launching native PWA prompt:", err);
+        setShowInstallModal(true);
       }
-      setDeferredPrompt(null);
-      setShowInstallBtn(false);
     } else {
-      alert(
-        "📲 ¡Instala BabyChef en tu celular!\n\n" +
-        "• En Android/Chrome: Haz clic en los tres puntos de arriba y selecciona 'Instalar aplicación' o 'Agregar a la pantalla principal'.\n\n" +
-        "• En iOS/Safari: Haz clic en el botón 'Compartir' (el cuadrado con flecha hacia arriba) y selecciona 'Agregar al inicio'."
-      );
+      setShowInstallModal(true);
     }
   };
 
@@ -4089,6 +4091,119 @@ export default function App() {
         </div>
 
       </div> {/* Close Mobile Device Container */}
+
+      {/* ================= CUSTOM PWA INSTALLATION MODAL ================= */}
+      {showInstallModal && (
+        <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-[100] p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-[420px] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left">
+            
+            {/* Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">📲</span>
+                <div>
+                  <h3 className="font-display font-extrabold text-xs sm:text-sm">Instalar BabyChef App</h3>
+                  <p className="text-[10px] opacity-90">Acceso rápido desde tu pantalla de inicio</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowInstallModal(false)}
+                className="p-1 hover:bg-white/15 rounded-lg transition-colors cursor-pointer text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              
+              {/* CASE 1: Inside an iframe (AI Studio preview, etc) */}
+              {(typeof window !== "undefined" && window.self !== window.top) ? (
+                <div className="space-y-3.5">
+                  <div className="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-2xl flex gap-2.5">
+                    <span className="text-xl shrink-0">⚠️</span>
+                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed font-semibold">
+                      Estás viendo la aplicación en modo de vista previa (iframe). Los navegadores bloquean la instalación directa de PWAs desde marcos virtuales.
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                    Para poder instalar <strong>BabyChef</strong> directamente en tu celular o computadora con un solo clic, debes abrir la aplicación en una pestaña nueva o en tu navegador móvil.
+                  </p>
+                  <button
+                    onClick={() => {
+                      window.open(window.location.href, "_blank");
+                      setShowInstallModal(false);
+                    }}
+                    className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/10 active:scale-[0.98] cursor-pointer"
+                  >
+                    <span>Abrir en Pestaña Nueva 🚀</span>
+                  </button>
+                </div>
+              ) : (
+                /* CASE 2: Outside iframe (standalone browser) */
+                <div className="space-y-4">
+                  {/* iOS / Safari Detection */}
+                  {typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent) ? (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-blue-500/10 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-2xl">
+                        <span className="text-xs font-bold text-blue-700 dark:text-blue-400 block mb-1">📢 Instrucciones para iPhone / iPad (Safari)</span>
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                          iOS no permite la instalación automática con un botón. Sigue estos simples pasos para instalarla:
+                        </p>
+                      </div>
+                      <ol className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300 pl-1">
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
+                          <span className="leading-relaxed">Presiona el botón de <strong>Compartir</strong> en la barra de tu navegador Safari (icono de un cuadrado con una flecha hacia arriba 📤).</span>
+                        </li>
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
+                          <span className="leading-relaxed">Desliza hacia abajo en las opciones de menú y selecciona <strong>"Agregar a pantalla de inicio"</strong> o <strong>"Add to Home Screen"</strong> ➕.</span>
+                        </li>
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
+                          <span className="leading-relaxed">Escribe un nombre si lo deseas y presiona <strong>"Agregar"</strong> arriba a la derecha. ¡Listo!</span>
+                        </li>
+                      </ol>
+                    </div>
+                  ) : (
+                    /* Android or Desktop fallback */
+                    <div className="space-y-3">
+                      <div className="p-3.5 bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-2xl">
+                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                          Si tu navegador soporta instalación directa pero no se mostró el diálogo automático, puedes instalar la aplicación de forma manual en segundos:
+                        </p>
+                      </div>
+                      <ol className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300 pl-1">
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
+                          <span className="leading-relaxed">Busca el menú de <strong>tres puntos (⋮)</strong> o el icono de <strong>instalación (📥)</strong> en la barra de direcciones de tu navegador (Chrome/Edge/Samsung Internet).</span>
+                        </li>
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
+                          <span className="leading-relaxed">Selecciona la opción <strong>"Instalar aplicación"</strong> o <strong>"Agregar a la pantalla principal"</strong>.</span>
+                        </li>
+                        <li className="flex gap-2 items-start">
+                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
+                          <span className="leading-relaxed">Confirma la instalación y BabyChef aparecerá en tu menú de aplicaciones de tu celular o escritorio de tu PC.</span>
+                        </li>
+                      </ol>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={() => setShowInstallModal(false)}
+                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer text-center"
+                  >
+                    Entendido
+                  </button>
+                </div>
+              )}
+
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Outer floating disclaimer or footer at desktop level */}
       <footer className="hidden lg:block absolute bottom-2 left-0 right-0 text-center text-[10px] text-pink-700/60 dark:text-indigo-300/40 select-none pointer-events-none">
