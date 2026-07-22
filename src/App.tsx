@@ -77,6 +77,29 @@ import {
 import GrowthChart from "./components/GrowthChart";
 import RecipeTimer from "./components/RecipeTimer";
 
+// Helper component to render BabyChef logo with graceful error fallback
+const BabyChefLogo = ({ className = "w-full h-full object-contain" }: { className?: string }) => {
+  const [hasError, setHasError] = useState(false);
+
+  if (hasError) {
+    return (
+      <div className={`flex items-center justify-center bg-gradient-to-tr from-pink-400 via-rose-400 to-sky-400 text-white rounded-2xl shadow-xs font-extrabold select-none ${className}`}>
+        <span className="text-xl">👨‍🍳</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src="/logo.png"
+      alt="BabyChef Logo"
+      className={className}
+      referrerPolicy="no-referrer"
+      onError={() => setHasError(true)}
+    />
+  );
+};
+
 // Define API backend base URL depending on deployment hostname.
 // If it's running on Vercel or other client-only hosting, it points back to our active Cloud Run container.
 const API_BASE_URL = window.location.hostname.includes("localhost") || window.location.hostname.includes("run.app")
@@ -565,24 +588,22 @@ export default function App() {
     const promptEvent = deferredPrompt || (window as any).deferredPrompt;
     if (promptEvent) {
       try {
-        promptEvent.prompt();
+        await promptEvent.prompt();
         const { outcome } = await promptEvent.userChoice;
         console.log("Install outcome:", outcome);
         setDeferredPrompt(null);
         (window as any).deferredPrompt = null;
         setShowInstallBtn(false);
+        setShowInstallScreen(false);
       } catch (err) {
         console.error("Error trigger prompt:", err);
+        setShowInstallScreen(false);
+        setShowInstallBtn(false);
       }
     } else {
-      // Direct, simple feedback if the browser is still loading or doesn't support direct triggers
-      // Wait, is it iOS Safari?
-      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      if (isiOS) {
-        alert("En iPhone/iPad, presiona el botón 'Compartir' (📤) en la parte inferior de Safari y luego selecciona 'Agregar a Inicio'.");
-      } else {
-        alert("La aplicación está lista para instalarse. Si no aparece el diálogo automático, puedes instalarla en un clic desde el menú de tu navegador (instalar aplicación) o intentarlo de nuevo en unos segundos.");
-      }
+      // Direct 1-click execution: enter application cleanly without menu recommendations
+      setShowInstallScreen(false);
+      setShowInstallBtn(false);
     }
   };
 
@@ -1348,8 +1369,8 @@ export default function App() {
       <div className="hidden lg:block absolute top-12 left-12 text-6xl animate-pulse opacity-40 select-none">🍼</div>
       <div className="hidden lg:block absolute bottom-12 left-16 text-6xl rotate-12 opacity-40 select-none">🧸</div>
       <div className="hidden lg:block absolute top-20 right-20 text-6xl -rotate-12 opacity-40 select-none">🪇</div>
-      <div className="hidden lg:block absolute bottom-16 right-12 w-20 h-20 animate-bounce opacity-40 select-none">
-        <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+      <div className="hidden lg:block absolute bottom-16 right-12 w-20 h-20 animate-bounce select-none flex items-center justify-center p-2 bg-white/70 dark:bg-slate-800/70 rounded-3xl backdrop-blur-xs border border-pink-100 dark:border-slate-700 shadow-lg">
+        <BabyChefLogo className="w-full h-full object-contain" />
       </div>
       <div className="hidden lg:block absolute top-1/2 left-8 text-5xl opacity-30 select-none">👣</div>
       <div className="hidden lg:block absolute top-1/3 right-8 text-5xl opacity-30 select-none">🥣</div>
@@ -1380,7 +1401,7 @@ export default function App() {
           <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-center bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
             <div className="space-y-6 py-6 text-center">
               <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-3xl flex items-center justify-center p-3.5 mx-auto shadow-md border border-pink-100 dark:border-slate-700">
-                <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                <BabyChefLogo className="w-full h-full object-contain" />
               </div>
               <div className="space-y-2">
                 <h2 className="font-display font-extrabold text-2xl text-slate-800 dark:text-white">Instalar BabyChef</h2>
@@ -1420,7 +1441,7 @@ export default function App() {
             <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
               <div className="text-center space-y-2">
                 <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-3xl flex items-center justify-center p-2.5 mx-auto shadow-md border border-pink-100 dark:border-slate-700">
-                  <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                  <BabyChefLogo className="w-full h-full object-contain" />
                 </div>
                 <h2 className="font-display font-extrabold text-xl text-slate-800 dark:text-white">¡Bienvenida, Mamita! 💕</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">Registra los datos de tu bebé para que adaptemos automáticamente su alimentación a la edad óptima.</p>
@@ -1596,7 +1617,7 @@ export default function App() {
         } backdrop-blur-md`}>
           <div className="flex items-center gap-2">
             <div className="p-1 bg-white dark:bg-slate-800 rounded-xl shadow-xs border border-pink-100 dark:border-slate-700 w-9 h-9 flex items-center justify-center overflow-hidden animate-bounce">
-              <img src="/logo.png" alt="BabyChef" className="w-7 h-7 object-contain" referrerPolicy="no-referrer" />
+              <BabyChefLogo className="w-7 h-7 object-contain" />
             </div>
             <div>
               <span className="font-display font-bold text-md bg-gradient-to-r from-pink-500 via-purple-500 to-sky-500 bg-clip-text text-transparent">
@@ -1702,7 +1723,7 @@ export default function App() {
                         &ldquo;{MOTIVATIONAL_QUOTES[quoteIndex]}&rdquo;
                       </p>
                       <div className="pt-1 text-xs text-slate-500 font-medium">
-                        Tu bebé tiene actualmente <span className="text-emerald-600 dark:text-emerald-400 font-bold">{babyAge.text}</span>. Adaptamos las sugerencias de comida automáticamente.
+                        Tu bebé tiene actualmente <span className="text-emerald-600 dark:text-emerald-400 font-bold">{babyAge.text}</span>.
                       </div>
                     </div>
                     {/* Big Baby Photo Avatar with dynamic selection */}
@@ -2610,29 +2631,7 @@ export default function App() {
                                   <p>
                                     💡 <strong>Nota de Seguridad:</strong> Tu nombre y correo electrónico se muestran permanentemente en el banner de seguridad de la parte inferior para proteger tu licencia personal. No reenvíes ni compartas tu enlace de acceso único con personas ajenas a tu hogar.
                                   </p>
-                                  <div className="flex justify-end pt-1">
-                                    <button 
-                                      onClick={() => {
-                                        const newName = prompt("Ingresa el Nombre Completo del Comprador original:", clientName);
-                                        if (newName === null) return;
-                                        const newEmail = prompt("Ingresa el Correo Electrónico de Compra:", clientEmail);
-                                        if (newEmail === null) return;
-                                        
-                                        if (newName.trim() && newEmail.trim()) {
-                                          localStorage.setItem("babychef_client_name", newName.trim());
-                                          localStorage.setItem("babychef_client_email", newEmail.trim().toLowerCase());
-                                          setClientName(newName.trim());
-                                          setClientEmail(newEmail.trim().toLowerCase());
-                                          alert("Datos de la licencia actualizados con éxito.");
-                                        } else {
-                                          alert("El nombre y correo electrónico son obligatorios.");
-                                        }
-                                      }}
-                                      className="text-[10px] text-sky-600 hover:text-sky-700 font-extrabold cursor-pointer hover:underline flex items-center gap-1"
-                                    >
-                                      📝 Modificar Datos de Licencia
-                                    </button>
-                                  </div>
+
                                 </div>
                               </div>
                             </div>
@@ -4491,30 +4490,7 @@ export default function App() {
                               <p>
                                 💡 <strong>Nota de Seguridad:</strong> Tu nombre y correo electrónico se muestran permanentemente en el banner de seguridad de la parte inferior para proteger tu licencia personal. No reenvíes ni compartas tu enlace de acceso único con personas ajenas a tu hogar.
                               </p>
-                              <div className="flex justify-end pt-1">
-                                <button 
-                                  type="button"
-                                  onClick={() => {
-                                    const newName = prompt("Ingresa el Nombre Completo del Comprador original:", clientName);
-                                    if (newName === null) return;
-                                    const newEmail = prompt("Ingresa el Correo Electrónico de Compra:", clientEmail);
-                                    if (newEmail === null) return;
-                                    
-                                    if (newName.trim() && newEmail.trim()) {
-                                      localStorage.setItem("babychef_client_name", newName.trim());
-                                      localStorage.setItem("babychef_client_email", newEmail.trim().toLowerCase());
-                                      setClientName(newName.trim());
-                                      setClientEmail(newEmail.trim().toLowerCase());
-                                      alert("Datos de la licencia actualizados con éxito.");
-                                    } else {
-                                      alert("El nombre y correo electrónico son obligatorios.");
-                                    }
-                                  }}
-                                  className="text-[10px] text-sky-600 hover:text-sky-700 font-extrabold cursor-pointer hover:underline flex items-center gap-1"
-                                >
-                                  📝 Modificar Datos de Licencia
-                                </button>
-                              </div>
+
                             </div>
                           </div>
                         </div>
