@@ -45,7 +45,8 @@ import {
   ShieldAlert,
   RefreshCw,
   Copy,
-  HelpCircle
+  HelpCircle,
+  Facebook
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -300,6 +301,7 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
   const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [showDirectInstallPopup, setShowDirectInstallPopup] = useState<boolean>(false);
 
   // Profile Form states
   const [isAddingBaby, setIsAddingBaby] = useState(false);
@@ -515,6 +517,7 @@ export default function App() {
       e.preventDefault();
       setDeferredPrompt(e);
       setShowInstallBtn(true);
+      setShowDirectInstallPopup(true);
     };
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
     return () => {
@@ -4028,6 +4031,86 @@ export default function App() {
                 </div>
               )}
 
+              {/* --- VIEW: COMUNIDAD FACEBOOK --- */}
+              {activeTab === "comunidad" && (
+                <div className="space-y-6 text-left">
+                  {/* Explanatory Header Card */}
+                  <div className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white p-6 rounded-3xl space-y-3.5 shadow-md shadow-blue-500/10">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-white/15 rounded-2xl">
+                        <Facebook className="w-6 h-6 text-white" />
+                      </div>
+                      <div>
+                        <h2 className="font-display font-extrabold text-md sm:text-lg">
+                          Comunidad y Orientación de Facebook
+                        </h2>
+                        <p className="text-[10px] sm:text-xs opacity-90">
+                          Tu red de apoyo de mamás para una alimentación exitosa
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Call to Action Main Card */}
+                  <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm space-y-5 text-center sm:text-left">
+                    <div className="space-y-2">
+                      <h3 className="font-display font-bold text-sm sm:text-md text-slate-800 dark:text-white">
+                        👶 ¡Únete a nuestro grupo oficial!
+                      </h3>
+                      <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed">
+                        Hemos creado este rincón en Facebook para que todas las mamás que usan <strong>BabyChef</strong> tengan una herramienta extra de orientación. Podrás compartir tus dudas, ver ideas de platos de otras mamás y recibir consejos valiosos sobre crianza y nutrición complementaria.
+                      </p>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 dark:bg-slate-700/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-100 dark:border-slate-700">
+                      <div className="text-center sm:text-left">
+                        <span className="text-[10px] text-blue-500 dark:text-blue-400 font-bold block uppercase tracking-wider">GRUPO OFICIAL</span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-white">Comunidad de Apoyo BabyChef</span>
+                      </div>
+                      <a 
+                        href="https://www.facebook.com/share/1MeZZs1BAm/" 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-blue-600/10 flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
+                      >
+                        <Facebook className="w-4 h-4 shrink-0" />
+                        <span>Ir al Grupo de Facebook 🚀</span>
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* What you will find Section */}
+                  <div className="space-y-4">
+                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">💡 ¿Qué encontrarás en nuestra comunidad?</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
+                        <span className="text-xl">🩺</span>
+                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Orientación de Expertos</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Accede a consejos e información confiable compartida por especialistas en pediatría y nutrición infantil.
+                        </p>
+                      </div>
+
+                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
+                        <span className="text-xl">🍲</span>
+                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Platos del Día Real</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Mira fotos reales de comidas que otras mamás preparan con las recetas de la app para inspirarte diariamente.
+                        </p>
+                      </div>
+
+                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
+                        <span className="text-xl">🤝</span>
+                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Espacio Seguro</h5>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                          Un espacio libre de críticas donde puedes desahogarte, hacer preguntas de cualquier nivel y sentirte acompañada.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
             </motion.div>
           </AnimatePresence>
         </main>
@@ -4063,6 +4146,7 @@ export default function App() {
               { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
               { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
               { id: "inquietudes", label: "Consultas", icon: HelpCircle, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
+              { id: "comunidad", label: "Comunidad FB", icon: Facebook, color: "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border-blue-200" },
               { id: "statistics", label: "Métricas", icon: BarChart2, color: "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200" }
             ].map(item => {
               const IconComponent = item.icon;
@@ -4201,6 +4285,49 @@ export default function App() {
               )}
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= DIRECT PWA AUTO-PROMPTER POPUP ================= */}
+      {showDirectInstallPopup && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[110] p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-[360px] shadow-2xl p-6 border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-center space-y-5">
+            
+            {/* Logo display */}
+            <div className="flex justify-center">
+              <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-md border-2 border-pink-100 dark:border-pink-900/40">
+                <img src="/logo.png" alt="BabyChef" className="w-full h-full object-cover" />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="font-display font-extrabold text-base sm:text-lg text-slate-800 dark:text-white">
+                ¡Instalar BabyChef App! 📲
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                Disfruta de BabyChef con acceso directo en tu pantalla de inicio, inicio rápido en pantalla completa y la mejor experiencia de usuario.
+              </p>
+            </div>
+
+            <div className="space-y-2.5 pt-1">
+              <button
+                onClick={() => {
+                  setShowDirectInstallPopup(false);
+                  handleInstallClick();
+                }}
+                className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-pink-500/10 active:scale-[0.98] cursor-pointer"
+              >
+                Instalar Ahora 🚀
+              </button>
+              <button
+                onClick={() => setShowDirectInstallPopup(false)}
+                className="w-full py-2.5 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+              >
+                Quizás más tarde
+              </button>
+            </div>
+
           </div>
         </div>
       )}

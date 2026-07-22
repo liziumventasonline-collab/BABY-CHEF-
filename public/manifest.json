@@ -1,23 +1,38 @@
 {
-  "short_name": "Baby Chef",
-  "name": "Baby Chef - Recetario y Crecimiento",
+  "short_name": "BabyChef",
+  "name": "BabyChef - Recetario y Crecimiento",
+  "description": "Recetario y control de crecimiento para tu bebé. Tu guía en alimentación complementaria BLW y papillas.",
   "icons": [
     {
       "src": "/logo.png",
       "type": "image/png",
       "sizes": "192x192",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/logo.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "maskable"
     },
     {
       "src": "/logo512.png",
       "type": "image/png",
       "sizes": "512x512",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "maskable"
     }
   ],
-  "start_url": "/",
-  "background_color": "#fdf2f8",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "background_color": "#ffffff",
   "theme_color": "#ec4899",
   "display": "standalone",
-  "orientation": "portrait"
+  "orientation": "portrait",
+  "categories": ["lifestyle", "education", "food"]
 }
