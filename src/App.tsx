@@ -324,9 +324,6 @@ export default function App() {
   // PWA states
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
-  const [showInstallScreen, setShowInstallScreen] = useState<boolean>(false);
-  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
-  const [installingStatus, setInstallingStatus] = useState<"idle" | "prompting" | "success" | "instructions">("idle");
 
 
 
@@ -363,10 +360,6 @@ export default function App() {
     const checkUrlAuth = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
-        
-        if (urlParams.get("instalar") === "true") {
-          setShowInstallScreen(true);
-        }
         
         // We accept any parameter indicating a payment or active license/access
         const paramKeys = ["acceso", "token", "key", "code", "licencia", "access"];
@@ -586,45 +579,23 @@ export default function App() {
     };
   }, []);
 
-  const handleInstallClick = () => {
-    setShowInstallModal(true);
-    setInstallingStatus("idle");
-  };
-
-  const handleConfirmInstall = async () => {
-    setInstallingStatus("prompting");
+  const handleInstallClick = async () => {
     const promptEvent = deferredPrompt || (window as any).deferredPrompt;
-
     if (promptEvent) {
       try {
         await promptEvent.prompt();
         const { outcome } = await promptEvent.userChoice;
         console.log("Install outcome:", outcome);
         if (outcome === "accepted") {
-          setInstallingStatus("success");
           setDeferredPrompt(null);
           (window as any).deferredPrompt = null;
-          setTimeout(() => {
-            setShowInstallBtn(false);
-            setShowInstallModal(false);
-            setShowInstallScreen(false);
-            setInstallingStatus("idle");
-          }, 1500);
-        } else {
-          // User cancelled in browser native prompt; keep install button visible
-          setInstallingStatus("idle");
-          setShowInstallModal(false);
+          setShowInstallBtn(false);
         }
       } catch (err) {
-        console.error("Error triggering prompt:", err);
-        setInstallingStatus("instructions");
+        console.error("Error invoking PWA install prompt:", err);
       }
     } else {
-      // Prompt event not yet ready or running in iframe
-      setInstallingStatus("instructions");
-      setTimeout(() => {
-        setShowInstallScreen(false);
-      }, 3000);
+      alert("Si tu navegador o dispositivo no despliega el cuadro de instalación automática en este momento, puedes instalar la PWA directamente desde el menú 'Instalar aplicación' de tu navegador.");
     }
   };
 
@@ -1135,74 +1106,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* ================= PWA INSTALLATION CONFIRMATION MODAL ================= */}
-        {showInstallModal && (
-          <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-50 p-4 backdrop-blur-xs select-none animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-sm flex flex-col shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left p-6 space-y-5">
-              
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-pink-100 dark:bg-pink-950/60 rounded-2xl flex items-center justify-center p-2 border border-pink-200 dark:border-pink-900/40 shrink-0">
-                  <BabyChefLogo className="w-full h-full object-contain" />
-                </div>
-                <div>
-                  <h3 className="font-display font-extrabold text-base text-slate-800 dark:text-white">Instalar App BabyChef</h3>
-                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/40 inline-block mt-0.5">
-                    PWA Oficial 📲
-                  </span>
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                  ¿Deseas instalar la aplicación <strong>BabyChef</strong> en tu celular para acceder en un solo clic desde tu pantalla de inicio?
-                </p>
-              </div>
-
-              {installingStatus === "instructions" && (
-                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed space-y-1 animate-in fade-in duration-300">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <span>✨</span>
-                    <span>Solicitud enviada al navegador</span>
-                  </p>
-                  <p className="text-[11px] opacity-90">
-                    Si tu navegador o celular muestra una ventana emergente o mensaje para confirmar la instalación, presiona en <strong>"Instalar"</strong> o <strong>"Aceptar"</strong>.
-                  </p>
-                </div>
-              )}
-
-              {installingStatus === "success" && (
-                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed font-bold flex items-center gap-2 animate-in fade-in duration-300">
-                  <span className="text-lg">🎉</span>
-                  <span>¡Aplicación instalada con éxito!</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowInstallModal(false);
-                    setInstallingStatus("idle");
-                  }}
-                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
-                >
-                  Cancelar
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleConfirmInstall}
-                  disabled={installingStatus === "prompting"}
-                  className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Aceptar e Instalar</span>
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
 
         {/* ================= ADMIN MANAGEMENT PANEL MODAL ================= */}
         {showAdminModal && (
@@ -1487,45 +1391,7 @@ export default function App() {
           </div>
         </div>
 
-        {showInstallScreen ? (
-          <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-center bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
-            <div className="space-y-6 py-6 text-center">
-              <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-3xl flex items-center justify-center p-3.5 mx-auto shadow-md border border-pink-100 dark:border-slate-700">
-                <BabyChefLogo className="w-full h-full object-contain" />
-              </div>
-              <div className="space-y-2">
-                <h2 className="font-display font-extrabold text-2xl text-slate-800 dark:text-white">Instalar BabyChef</h2>
-                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed px-2">
-                  ¡Lleva el recetario de tu bebé siempre contigo! Al instalar la aplicación se añadirá automáticamente a la pantalla principal de tu celular.
-                </p>
-              </div>
-
-              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed text-left flex gap-3">
-                <span className="text-lg">✨</span>
-                <p>
-                  <strong>Acceso Directo:</strong> Una vez instalada, la aplicación se mostrará en la pantalla principal de tu celular para que puedas abrirla al instante en un solo clic.
-                </p>
-              </div>
-
-              <div className="space-y-3 pt-4">
-                <button
-                  onClick={handleInstallClick}
-                  className="w-full py-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-lg shadow-pink-500/20 transition-all transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Download className="w-5 h-5" />
-                  <span>Instalar App Ahora</span>
-                </button>
-
-                <button
-                  onClick={() => setShowInstallScreen(false)}
-                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
-                >
-                  Continuar a la versión web →
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : showOnboarding ? (
+        {showOnboarding ? (
           <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
             {/* Beautiful Custom Onboarding Form */}
             <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
@@ -4753,7 +4619,7 @@ export default function App() {
         )}
 
         {/* --- LICENSED ORIGINAL USER BADGE (IDEA 4) --- */}
-        {!showOnboarding && !showInstallScreen && clientEmail && (
+        {!showOnboarding && clientEmail && (
           <div className={`px-4 py-1.5 text-[9px] font-bold flex items-center justify-between gap-2 border-t select-none transition-all ${
             isDarkMode 
               ? "bg-slate-900/85 border-slate-800 text-slate-400" 
@@ -4768,7 +4634,7 @@ export default function App() {
         )}
 
         {/* Responsive Bottom Navigation Tab Bar (Sliding Pastel Pill Menu) */}
-        {!showOnboarding && !showInstallScreen && (
+        {!showOnboarding && (
           <div className={`border-t px-3 py-3 select-none flex-shrink-0 transition-colors ${
             isDarkMode ? "bg-slate-950 border-slate-800" : "bg-gradient-to-r from-pink-50 via-sky-50 to-teal-50 border-pink-100"
           }`}>
