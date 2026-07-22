@@ -46,7 +46,8 @@ import {
   RefreshCw,
   Copy,
   HelpCircle,
-  Facebook
+  Facebook,
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -297,11 +298,12 @@ export default function App() {
   const [newBabyHeight, setNewBabyHeight] = useState("");
   const [newBabyHeadCirc, setNewBabyHeadCirc] = useState("");
 
-  // PWA Install Prompt states
+  // PWA states
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
-  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
-  const [showDirectInstallPopup, setShowDirectInstallPopup] = useState<boolean>(false);
+  const [showInstallScreen, setShowInstallScreen] = useState<boolean>(false);
+
+
 
   // Profile Form states
   const [isAddingBaby, setIsAddingBaby] = useState(false);
@@ -336,6 +338,10 @@ export default function App() {
     const checkUrlAuth = async () => {
       try {
         const urlParams = new URLSearchParams(window.location.search);
+        
+        if (urlParams.get("instalar") === "true") {
+          setShowInstallScreen(true);
+        }
         
         // We accept any parameter indicating a payment or active license/access
         const paramKeys = ["acceso", "token", "key", "code", "licencia", "access"];
@@ -512,18 +518,73 @@ export default function App() {
     }
   };
 
+
+
   useEffect(() => {
+    // Check if the prompt was already captured globally in index.html
+    const globalPrompt = (window as any).deferredPrompt;
+    if (globalPrompt) {
+      setDeferredPrompt(globalPrompt);
+      setShowInstallBtn(true);
+    }
+
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
+      (window as any).deferredPrompt = e;
       setShowInstallBtn(true);
-      setShowDirectInstallPopup(true);
     };
+
+    const handleCustomPromptAvailable = () => {
+      const e = (window as any).deferredPrompt;
+      if (e) {
+        setDeferredPrompt(e);
+        setShowInstallBtn(true);
+      }
+    };
+
     window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    window.addEventListener("pwa-prompt-available", handleCustomPromptAvailable);
+
+    // Check if we are already running inside the installed standalone PWA
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches 
+      || (navigator as any).standalone 
+      || document.referrer.includes('android-app://');
+    
+    if (isStandalone) {
+      setShowInstallBtn(false);
+    }
+
     return () => {
       window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+      window.removeEventListener("pwa-prompt-available", handleCustomPromptAvailable);
     };
   }, []);
+
+  const handleInstallClick = async () => {
+    const promptEvent = deferredPrompt || (window as any).deferredPrompt;
+    if (promptEvent) {
+      try {
+        promptEvent.prompt();
+        const { outcome } = await promptEvent.userChoice;
+        console.log("Install outcome:", outcome);
+        setDeferredPrompt(null);
+        (window as any).deferredPrompt = null;
+        setShowInstallBtn(false);
+      } catch (err) {
+        console.error("Error trigger prompt:", err);
+      }
+    } else {
+      // Direct, simple feedback if the browser is still loading or doesn't support direct triggers
+      // Wait, is it iOS Safari?
+      const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      if (isiOS) {
+        alert("En iPhone/iPad, presiona el botón 'Compartir' (📤) en la parte inferior de Safari y luego selecciona 'Agregar a Inicio'.");
+      } else {
+        alert("La aplicación está lista para instalarse. Si no aparece el diálogo automático, puedes instalarla en un clic desde el menú de tu navegador (instalar aplicación) o intentarlo de nuevo en unos segundos.");
+      }
+    }
+  };
 
   useEffect(() => {
     localStorage.setItem("babychef_babies", JSON.stringify(babies));
@@ -622,24 +683,7 @@ export default function App() {
     }
   }, []);
 
-  const handleInstallClick = async () => {
-    if (deferredPrompt) {
-      try {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === "accepted") {
-          console.log("User accepted PWA installation");
-        }
-        setDeferredPrompt(null);
-        setShowInstallBtn(false);
-      } catch (err) {
-        console.error("Error launching native PWA prompt:", err);
-        setShowInstallModal(true);
-      }
-    } else {
-      setShowInstallModal(true);
-    }
-  };
+
 
   const handleAddShoppingItem = (e: FormEvent) => {
     e.preventDefault();
@@ -1304,7 +1348,9 @@ export default function App() {
       <div className="hidden lg:block absolute top-12 left-12 text-6xl animate-pulse opacity-40 select-none">🍼</div>
       <div className="hidden lg:block absolute bottom-12 left-16 text-6xl rotate-12 opacity-40 select-none">🧸</div>
       <div className="hidden lg:block absolute top-20 right-20 text-6xl -rotate-12 opacity-40 select-none">🪇</div>
-      <div className="hidden lg:block absolute bottom-16 right-12 text-6xl animate-bounce opacity-40 select-none">👶</div>
+      <div className="hidden lg:block absolute bottom-16 right-12 w-20 h-20 animate-bounce opacity-40 select-none">
+        <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+      </div>
       <div className="hidden lg:block absolute top-1/2 left-8 text-5xl opacity-30 select-none">👣</div>
       <div className="hidden lg:block absolute top-1/3 right-8 text-5xl opacity-30 select-none">🥣</div>
 
@@ -1330,13 +1376,51 @@ export default function App() {
           </div>
         </div>
 
-        {showOnboarding ? (
+        {showInstallScreen ? (
+          <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-center bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
+            <div className="space-y-6 py-6 text-center">
+              <div className="w-20 h-20 bg-white dark:bg-slate-800 rounded-3xl flex items-center justify-center p-3.5 mx-auto shadow-md border border-pink-100 dark:border-slate-700">
+                <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="font-display font-extrabold text-2xl text-slate-800 dark:text-white">Instalar BabyChef</h2>
+                <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed px-2">
+                  ¡Lleva el recetario de tu bebé siempre contigo! Al instalar la aplicación se añadirá automáticamente a la pantalla principal de tu celular.
+                </p>
+              </div>
+
+              <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed text-left flex gap-3">
+                <span className="text-lg">✨</span>
+                <p>
+                  <strong>Acceso Directo:</strong> Una vez instalada, la aplicación se mostrará en la pantalla principal de tu celular para que puedas abrirla al instante en un solo clic.
+                </p>
+              </div>
+
+              <div className="space-y-3 pt-4">
+                <button
+                  onClick={handleInstallClick}
+                  className="w-full py-4 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-lg shadow-pink-500/20 transition-all transform active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <Download className="w-5 h-5" />
+                  <span>Instalar App Ahora</span>
+                </button>
+
+                <button
+                  onClick={() => setShowInstallScreen(false)}
+                  className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                >
+                  Continuar a la versión web →
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : showOnboarding ? (
           <div className="flex-1 overflow-y-auto p-6 flex flex-col justify-between bg-gradient-to-b from-pink-50 via-white to-sky-50 dark:from-slate-950 dark:to-slate-900 animate-in fade-in duration-500 text-left">
             {/* Beautiful Custom Onboarding Form */}
             <form onSubmit={handleOnboardingSubmit} className="space-y-5 py-2">
               <div className="text-center space-y-2">
-                <div className="w-16 h-16 bg-pink-100 dark:bg-pink-950/60 rounded-3xl flex items-center justify-center text-4xl mx-auto shadow-md">
-                  👶
+                <div className="w-16 h-16 bg-white dark:bg-slate-800 rounded-3xl flex items-center justify-center p-2.5 mx-auto shadow-md border border-pink-100 dark:border-slate-700">
+                  <img src="/logo.png" alt="BabyChef Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                 </div>
                 <h2 className="font-display font-extrabold text-xl text-slate-800 dark:text-white">¡Bienvenida, Mamita! 💕</h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">Registra los datos de tu bebé para que adaptemos automáticamente su alimentación a la edad óptima.</p>
@@ -1511,8 +1595,8 @@ export default function App() {
             : "bg-gradient-to-r from-pink-50/90 via-sky-50/90 to-teal-50/90 border-pink-100"
         } backdrop-blur-md`}>
           <div className="flex items-center gap-2">
-            <div className="p-2 bg-pink-100 dark:bg-pink-950 rounded-xl text-pink-500 shadow-xs">
-              <Baby className="w-5 h-5 animate-bounce" />
+            <div className="p-1 bg-white dark:bg-slate-800 rounded-xl shadow-xs border border-pink-100 dark:border-slate-700 w-9 h-9 flex items-center justify-center overflow-hidden animate-bounce">
+              <img src="/logo.png" alt="BabyChef" className="w-7 h-7 object-contain" referrerPolicy="no-referrer" />
             </div>
             <div>
               <span className="font-display font-bold text-md bg-gradient-to-r from-pink-500 via-purple-500 to-sky-500 bg-clip-text text-transparent">
@@ -1525,13 +1609,14 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Pulsing Install Button */}
+            {/* Install App Button */}
             {showInstallBtn && (
               <button
                 onClick={handleInstallClick}
-                className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-bold text-[10px] sm:text-xs rounded-xl shadow-md shadow-emerald-500/20 flex items-center gap-1 transition-all border border-emerald-400/30 animate-pulse flex-shrink-0"
+                className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-extrabold text-[10px] sm:text-xs rounded-xl shadow-md shadow-emerald-500/10 flex items-center gap-1 transition-all border border-emerald-400/20 animate-pulse cursor-pointer flex-shrink-0"
               >
-                <span>📲 Instalar App</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>Instalar App</span>
               </button>
             )}
 
@@ -1676,8 +1761,7 @@ export default function App() {
                     {[
                       { id: "recetario", label: "Recetario Seguro", icon: UtensilsCrossed, color: "text-emerald-500 bg-emerald-100/40 border-emerald-200 dark:bg-emerald-950/20" },
                       { id: "plan-24-semanas", label: "Plan 24 Semanas", icon: CalendarDays, color: "text-sky-500 bg-sky-100/40 border-sky-200 dark:bg-sky-950/20" },
-                      { id: "desayunos", label: "Desayunos por Semanas", icon: Star, color: "text-pink-500 bg-pink-100/40 border-pink-200 dark:bg-pink-950/20" },
-                      { id: "crecimiento", label: "Ficha & Crecimiento", icon: BarChart2, color: "text-purple-500 bg-purple-100/40 border-purple-200 dark:bg-purple-950/20" }
+                      { id: "desayunos", label: "Desayunos por Semanas", icon: Star, color: "text-pink-500 bg-pink-100/40 border-pink-200 dark:bg-pink-950/20" }
                     ].map(sub => {
                       const Icon = sub.icon;
                       const isSubActive = activeDashboardSubTab === sub.id;
@@ -2072,8 +2156,8 @@ export default function App() {
                       </div>
                     )}
 
-                    {/* SUBTAB 4: FICHA DE SALUD & SEGUIMIENTO DE CRECIMIENTO */}
-                    {activeDashboardSubTab === "crecimiento" && (
+                    {/* SUBTAB 4: FICHA DE SALUD & SEGUIMIENTO DE CRECIMIENTO (MOVED TO MAIN TAB) */}
+                    {false && (
                       <div className="space-y-5 text-left">
                         {isAddingBaby ? (
                           /* --- FORM: NUEVO BEBE --- */
@@ -3942,96 +4026,522 @@ export default function App() {
                 </div>
               )}
 
-              {/* --- VIEW: STATISTICS --- */}
-              {activeTab === "statistics" && (
-                <div className="space-y-6">
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs">
-                    <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white">Estadísticas de Nutrición</h2>
-                    <p className="text-xs text-slate-500">Resumen y métricas de recetas preparadas e ingredientes favoritos del bebé.</p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    {/* Stat card 1 */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs flex items-center gap-4">
-                      <div className="p-4 bg-emerald-50 dark:bg-emerald-950 text-emerald-600 rounded-2xl text-2xl font-bold">
-                        {uniquePreparedCount}
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-400 font-medium block">Recetas Preparadas</span>
-                        <span className="text-md font-bold text-slate-700 dark:text-slate-200">{uniquePreparedCount} de {RECIPES_DB.length}</span>
-                      </div>
+              {/* --- VIEW: STATISTICS (CRECIMIENTO DEL BEBÉ) --- */}
+              {activeTab === "statistics" && (() => {
+                const activeGrowthEntries = growthEntriesByBaby[activeBaby?.id || ""] || [];
+                return (
+                  <div className="space-y-6 text-left">
+                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs">
+                      <h2 className="font-display font-bold text-lg text-slate-800 dark:text-white">Crecimiento del Bebé</h2>
+                      <p className="text-xs text-slate-500">Registra las medidas de tu bebé, edita su perfil y consulta las curvas de crecimiento oficiales de la OMS.</p>
                     </div>
 
-                    {/* Stat card 2 */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs flex items-center gap-4">
-                      <div className="p-4 bg-teal-50 dark:bg-teal-950 text-teal-600 rounded-2xl text-2xl font-bold">
-                        {completedPercentage}%
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-400 font-medium block">Recetario Completado</span>
-                        <span className="text-md font-bold text-slate-700 dark:text-slate-200">¡Gran logro familiar!</span>
-                      </div>
-                    </div>
+                    {isAddingBaby ? (
+                      /* --- FORM: NUEVO BEBE --- */
+                      <form onSubmit={handleAddBabyProfile} className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-emerald-200 dark:border-slate-700 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                        <div className="flex justify-between items-center mb-1 border-b pb-2.5 border-slate-100 dark:border-slate-700">
+                          <h4 className="text-xs font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                            <Plus className="w-4 h-4 text-emerald-500" /> Nuevo Perfil de Bebé
+                          </h4>
+                          <button onClick={() => setIsAddingBaby(false)} type="button" className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre *</label>
+                            <input
+                              type="text"
+                              value={newBabyName}
+                              onChange={e => setNewBabyName(e.target.value)}
+                              placeholder="Ej: Sofía"
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha de Nacimiento *</label>
+                            <input
+                              type="date"
+                              value={newBabyBirth}
+                              onChange={e => setNewBabyBirth(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alergias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={newBabyAllergies}
+                              onChange={e => setNewBabyAllergies(e.target.value)}
+                              placeholder="Ej: Huevo, Lácteos, Gluten"
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preferencias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={newBabyPrefs}
+                              onChange={e => setNewBabyPrefs(e.target.value)}
+                              placeholder="Ej: Plátano, Aguacate, Calabaza"
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alimentos Restringidos (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={newBabyRestrictions}
+                              onChange={e => setNewBabyRestrictions(e.target.value)}
+                              placeholder="Ej: Sal, Azúcar, Miel"
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                            <textarea
+                              value={newBabyObs}
+                              onChange={e => setNewBabyObs(e.target.value)}
+                              placeholder="Ej: Iniciar con texturas blandas, le encantan las frutas."
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 h-16 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsAddingBaby(false)}
+                            className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            className="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Crear Perfil
+                          </button>
+                        </div>
+                      </form>
+                    ) : isEditingBaby ? (
+                      /* --- FORM: EDITAR PERFIL --- */
+                      <form onSubmit={handleSaveEditBaby} className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-sky-200 dark:border-slate-700 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-4 duration-300">
+                        <div className="flex justify-between items-center mb-1 border-b pb-2.5 border-slate-100 dark:border-slate-700">
+                          <h4 className="text-xs font-bold text-sky-600 dark:text-sky-400 uppercase tracking-wider flex items-center gap-1">
+                            <Edit3 className="w-4 h-4 text-sky-500" /> Editar Perfil de {activeBaby?.name}
+                          </h4>
+                          <button onClick={() => setIsEditingBaby(false)} type="button" className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                        <div className="space-y-3">
+                          {/* --- PHOTO EDIT FIELD --- */}
+                          <div className="flex flex-col items-center justify-center p-3 bg-slate-50 dark:bg-slate-800/40 rounded-2xl gap-2 border border-slate-100 dark:border-slate-700/60">
+                            <span className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Foto del Bebé</span>
+                            <div className="relative group w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 border-2 border-dashed border-sky-300 dark:border-slate-600 flex items-center justify-center text-slate-400 overflow-hidden shadow-xs">
+                              {editBabyPhotoUrl ? (
+                                <img src={editBabyPhotoUrl} alt="Preview" className="w-full h-full object-cover" />
+                              ) : (
+                                <Camera className="w-5 h-5 text-sky-400" />
+                              )}
+                              <label htmlFor="edit-photo-input-statistics" className="absolute inset-0 bg-black/40 flex items-center justify-center text-[9px] text-white font-bold opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                                Cambiar
+                              </label>
+                            </div>
+                            <input
+                              type="file"
+                              id="edit-photo-input-statistics"
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setEditBabyPhotoUrl(reader.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                              }}
+                              className="hidden"
+                            />
+                            <div className="flex gap-2">
+                              <label htmlFor="edit-photo-input-statistics" className="text-[10px] font-bold text-sky-500 hover:underline cursor-pointer">
+                                Subir nueva foto
+                              </label>
+                              {editBabyPhotoUrl && (
+                                <>
+                                  <span className="text-slate-300 dark:text-slate-600">|</span>
+                                  <button 
+                                    type="button" 
+                                    onClick={() => setEditBabyPhotoUrl("")}
+                                    className="text-[10px] font-bold text-rose-500 hover:underline cursor-pointer"
+                                  >
+                                    Quitar foto
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
 
-                    {/* Stat card 3 */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs flex items-center gap-4">
-                      <div className="p-4 bg-pink-50 dark:bg-pink-950 text-pink-600 rounded-2xl text-2xl font-bold">
-                        {preparedLogs.length}
-                      </div>
-                      <div>
-                        <span className="text-xs text-slate-400 font-medium block">Tomas Registradas</span>
-                        <span className="text-md font-bold text-slate-700 dark:text-slate-200">Histórico de comidas</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Reaction graph and preferences lists */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
-                      <h3 className="font-display font-semibold text-md text-slate-800 dark:text-white">Alimentos Preferidos del Bebé</h3>
-                      <p className="text-xs text-slate-400">Calculado a partir de tus marcas de &ldquo;Le encantó&rdquo; en cada receta:</p>
-                      
-                      {mostLikedRecipeNames.length > 0 ? (
-                        <ul className="space-y-2">
-                          {mostLikedRecipeNames.map((name, idx) => (
-                            <li key={idx} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                              <span className="font-semibold">{name}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-xs text-slate-400 py-4">No has guardado ninguna reacción positiva aún. ¡Anímate a marcar Thumbs-Up en el catálogo de recetas!</p>
-                      )}
-                    </div>
-
-                    {/* Age recommendation balance */}
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
-                      <h3 className="font-display font-semibold text-md text-slate-800 dark:text-white">Progreso de Alimentación por Edades</h3>
-                      <div className="space-y-3 text-xs">
-                        {["6 meses", "8 meses", "9 meses", "12 meses"].map(age => {
-                          const ageRecipes = RECIPES_DB.filter(r => r.ageRange.includes(age));
-                          const agePrepared = ageRecipes.filter(r => preparedLogs.some(l => l.recipeId === r.id));
-                          const percent = Math.round((agePrepared.length / (ageRecipes.length || 1)) * 100);
-                          return (
-                            <div key={age} className="space-y-1">
-                              <div className="flex justify-between font-medium">
-                                <span>Rango {age}</span>
-                                <span>{percent}% ({agePrepared.length}/{ageRecipes.length})</span>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nombre *</label>
+                            <input
+                              type="text"
+                              value={editBabyName}
+                              onChange={e => setEditBabyName(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fecha de Nacimiento *</label>
+                            <input
+                              type="date"
+                              value={editBabyBirth}
+                              onChange={e => setEditBabyBirth(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alergias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyAllergies}
+                              onChange={e => setEditBabyAllergies(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preferencias (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyPrefs}
+                              onChange={e => setEditBabyPrefs(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Alimentos Restringidos (separadas por comas)</label>
+                            <input
+                              type="text"
+                              value={editBabyRestrictions}
+                              onChange={e => setEditBabyRestrictions(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observaciones</label>
+                            <textarea
+                              value={editBabyObs}
+                              onChange={e => setEditBabyObs(e.target.value)}
+                              className="w-full text-xs p-2.5 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-1 focus:ring-sky-400 h-16 text-slate-800 dark:text-white"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingBaby(false)}
+                            className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            className="flex-1 py-2.5 bg-sky-500 hover:bg-sky-600 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                          >
+                            Guardar Cambios
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        {/* Presentation Card */}
+                        <div className={`p-6 rounded-3xl border transition-all ${
+                          isDarkMode 
+                            ? "bg-slate-800 border-slate-700 shadow-xs" 
+                            : "bg-white border-pink-100 shadow-sm"
+                        } space-y-4`}>
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b pb-4 border-slate-100 dark:border-slate-700/60 gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-12 h-12 rounded-full bg-pink-100 dark:bg-pink-950/60 flex items-center justify-center text-2xl shadow-xs overflow-hidden flex-shrink-0">
+                                {activeBaby?.photoUrl ? (
+                                  <img src={activeBaby.photoUrl} alt="Bebé" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  "👶"
+                                )}
                               </div>
-                              <div className="w-full bg-slate-100 dark:bg-slate-700 h-2 rounded-full overflow-hidden">
-                                <div className="bg-emerald-500 h-full rounded-full transition-all" style={{ width: `${percent}%` }}></div>
+                              <div>
+                                <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">
+                                  Perfil de {activeBaby?.name}
+                                </h3>
+                                <p className="text-[10px] text-slate-400">Ficha médica y requerimientos especiales</p>
                               </div>
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+                            
+                            {/* Actions Header */}
+                            <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                              <label 
+                                htmlFor="statistics-baby-photo-btn"
+                                className="px-2.5 py-1.5 bg-sky-50 hover:bg-sky-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-sky-700 dark:text-sky-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-sky-100 dark:border-transparent transition-all"
+                              >
+                                <Camera className="w-3.5 h-3.5" />
+                                <span>Subir Foto</span>
+                              </label>
+                              <input
+                                type="file"
+                                id="statistics-baby-photo-btn"
+                                accept="image/*"
+                                onChange={handlePhotoChange}
+                                className="hidden"
+                              />
 
-              {/* --- VIEW: COMUNIDAD FACEBOOK --- */}
+                              <button
+                                onClick={() => {
+                                  handleStartEditBaby();
+                                }}
+                                className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-amber-700 dark:text-amber-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-amber-100 dark:border-transparent transition-all"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                                <span>Editar</span>
+                              </button>
+
+                              <button
+                                onClick={() => {
+                                  setIsAddingBaby(true);
+                                  setIsEditingBaby(false);
+                                }}
+                                className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-emerald-100 dark:border-transparent transition-all"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>Nuevo</span>
+                              </button>
+
+                              <button
+                                onClick={handleDeleteBaby}
+                                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-slate-700 dark:hover:bg-slate-600 text-rose-700 dark:text-rose-300 text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer border border-rose-100 dark:border-transparent transition-all"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Eliminar</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Profile Stats Grid (Baby Card Details) */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                            <div className="p-3 bg-pink-50/40 dark:bg-slate-900/40 rounded-xl border border-pink-100/10 space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                📅 Nacimiento
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {activeBaby?.birthDate ? parseDateLocal(activeBaby.birthDate).toLocaleDateString("es-ES", {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric"
+                                }) : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-sky-50/40 dark:bg-slate-900/40 rounded-xl border border-sky-100/10 space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                ⚖️ Último Peso
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {activeGrowthEntries.length > 0 
+                                  ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].weight} kg`
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-teal-50/40 dark:bg-slate-900/40 rounded-xl border border-teal-100/10 space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                📏 Última Talla
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {activeGrowthEntries.length > 0 
+                                  ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].height} cm`
+                                  : "—"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-purple-50/40 dark:bg-slate-900/40 rounded-xl border border-purple-100/10 space-y-0.5">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                🧠 Perím. Cefálico
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {activeGrowthEntries.length > 0 && [...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference
+                                  ? `${[...activeGrowthEntries].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].headCircumference} cm`
+                                  : "—"}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Allergies and restricted items lists inside profile presentation */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {/* Allergies row */}
+                            <div className="p-3 bg-red-50/30 dark:bg-red-950/10 rounded-xl border border-red-100/20 space-y-1">
+                              <h4 className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wide flex items-center gap-1">
+                                ⚠️ Alergias Registradas
+                              </h4>
+                              <div className="flex flex-wrap gap-1">
+                                {activeBaby?.allergies && activeBaby.allergies.length > 0 ? (
+                                  activeBaby.allergies.map(alg => (
+                                    <span key={alg} className="text-[9px] bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-md font-bold">
+                                      {alg}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Sin alergias registradas</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Restrictions row */}
+                            <div className="p-3 bg-amber-50/30 dark:bg-amber-950/10 rounded-xl border border-amber-100/20 space-y-1">
+                              <h4 className="text-[10px] font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wide flex items-center gap-1">
+                                🚫 Alimentos Restringidos
+                              </h4>
+                              <div className="flex flex-wrap gap-1">
+                                {activeBaby?.restrictedFoods && activeBaby.restrictedFoods.length > 0 ? (
+                                  activeBaby.restrictedFoods.map(food => (
+                                    <span key={food} className="text-[9px] bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-md font-bold">
+                                      {food}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">Ninguno restringido</span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Preferences row */}
+                          <div className="p-3 bg-teal-50/20 dark:bg-teal-950/10 rounded-xl border border-teal-100/10 space-y-1">
+                            <h4 className="text-[10px] font-bold text-teal-600 dark:text-teal-400 uppercase tracking-wide flex items-center gap-1">
+                              ❤️ Alimentos Favoritos
+                            </h4>
+                            <div className="flex flex-wrap gap-1">
+                              {activeBaby?.preferences && activeBaby.preferences.length > 0 ? (
+                                activeBaby.preferences.map(pref => (
+                                  <span key={pref} className="text-[9px] bg-teal-100 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 px-2 py-0.5 rounded-md font-bold">
+                                    {pref}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[10px] text-slate-400">Sin alimentos preferidos registrados</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Pediatric observations block */}
+                          {activeBaby?.observations && (
+                            <div className="p-3 bg-slate-50/50 dark:bg-slate-900/30 rounded-xl border border-slate-100 dark:border-slate-800">
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">
+                                📝 Notas / Observaciones Especiales
+                              </span>
+                              <p className="text-[11px] text-slate-600 dark:text-slate-300 italic">
+                                &ldquo;{activeBaby.observations}&rdquo;
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Purchaser License Details Card */}
+                        <div className={`p-5 rounded-3xl border transition-all ${
+                          isDarkMode 
+                            ? "bg-slate-800 border-slate-700 shadow-xs" 
+                            : "bg-emerald-500/5 border-emerald-100 shadow-xs"
+                        } space-y-4`}>
+                          <div className="flex justify-between items-center border-b pb-3 border-emerald-500/10 gap-3 text-left">
+                            <div className="flex items-center gap-2">
+                              <div className="p-2 bg-emerald-100 dark:bg-emerald-950 rounded-2xl flex-shrink-0">
+                                <span className="text-emerald-600 text-sm">🛡️</span>
+                              </div>
+                              <div>
+                                <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">
+                                  Licencia y Activación Original
+                                </h3>
+                                <p className="text-[10px] text-slate-400">Datos registrados del titular de la compra</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="space-y-3 text-xs text-left">
+                            <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                Comprador de la Licencia
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white uppercase">
+                                {clientName || "Sin registrar"}
+                              </p>
+                            </div>
+
+                            <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1">
+                              <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider block">
+                                Correo de Compra Autorizado
+                              </span>
+                              <p className="text-xs font-bold text-slate-800 dark:text-white">
+                                {clientEmail || "Sin registrar"}
+                              </p>
+                            </div>
+
+                            <div className="bg-emerald-500/10 dark:bg-emerald-950/30 p-3 rounded-2xl border border-emerald-500/20 text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed space-y-2">
+                              <p>
+                                💡 <strong>Nota de Seguridad:</strong> Tu nombre y correo electrónico se muestran permanentemente en el banner de seguridad de la parte inferior para proteger tu licencia personal. No reenvíes ni compartas tu enlace de acceso único con personas ajenas a tu hogar.
+                              </p>
+                              <div className="flex justify-end pt-1">
+                                <button 
+                                  type="button"
+                                  onClick={() => {
+                                    const newName = prompt("Ingresa el Nombre Completo del Comprador original:", clientName);
+                                    if (newName === null) return;
+                                    const newEmail = prompt("Ingresa el Correo Electrónico de Compra:", clientEmail);
+                                    if (newEmail === null) return;
+                                    
+                                    if (newName.trim() && newEmail.trim()) {
+                                      localStorage.setItem("babychef_client_name", newName.trim());
+                                      localStorage.setItem("babychef_client_email", newEmail.trim().toLowerCase());
+                                      setClientName(newName.trim());
+                                      setClientEmail(newEmail.trim().toLowerCase());
+                                      alert("Datos de la licencia actualizados con éxito.");
+                                    } else {
+                                      alert("El nombre y correo electrónico son obligatorios.");
+                                    }
+                                  }}
+                                  className="text-[10px] text-sky-600 hover:text-sky-700 font-extrabold cursor-pointer hover:underline flex items-center gap-1"
+                                >
+                                  📝 Modificar Datos de Licencia
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* --- GROWTH CURVES & CHART COMPONENT --- */}
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-4">
+                          <div className="flex justify-between items-center border-b pb-4 border-slate-100 dark:border-slate-700/60">
+                            <h3 className="font-display font-bold text-sm text-slate-800 dark:text-white">Curvas de Crecimiento OMS</h3>
+                            <span className="text-[10px] bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 px-2.5 py-1 rounded-full font-bold">
+                              Control de Crecimiento 📊
+                            </span>
+                          </div>
+
+                          <GrowthChart
+                            entries={activeGrowthEntries}
+                            onAddEntry={handleAddGrowthEntry}
+                            onDeleteEntry={handleDeleteGrowthEntry}
+                            birthDate={activeBaby?.birthDate}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* --- VIEW: PÁGINAS RECOMENDADAS FACEBOOK --- */}
               {activeTab === "comunidad" && (
                 <div className="space-y-6 text-left">
                   {/* Explanatory Header Card */}
@@ -4042,70 +4552,128 @@ export default function App() {
                       </div>
                       <div>
                         <h2 className="font-display font-extrabold text-md sm:text-lg">
-                          Comunidad y Orientación de Facebook
+                          Páginas de Recomendaciones y Videos
                         </h2>
                         <p className="text-[10px] sm:text-xs opacity-90">
-                          Tu red de apoyo de mamás para una alimentación exitosa
+                          Acceso directo en 1 clic a páginas recomendadas de orientación, videos y consejos para mamás
                         </p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Call to Action Main Card */}
-                  <div className="bg-white dark:bg-slate-800 p-6 rounded-3xl border border-slate-100 dark:border-slate-700 shadow-sm space-y-5 text-center sm:text-left">
-                    <div className="space-y-2">
-                      <h3 className="font-display font-bold text-sm sm:text-md text-slate-800 dark:text-white">
-                        👶 ¡Únete a nuestro grupo oficial!
-                      </h3>
-                      <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed">
-                        Hemos creado este rincón en Facebook para que todas las mamás que usan <strong>BabyChef</strong> tengan una herramienta extra de orientación. Podrás compartir tus dudas, ver ideas de platos de otras mamás y recibir consejos valiosos sobre crianza y nutrición complementaria.
-                      </p>
+                  {/* Clarification Disclaimer Banner */}
+                  <div className="p-4 bg-blue-50/70 dark:bg-blue-950/30 rounded-2xl border border-blue-100 dark:border-blue-900/40 text-xs text-blue-900 dark:text-blue-200 leading-relaxed space-y-1">
+                    <div className="flex items-center gap-2 font-bold text-blue-700 dark:text-blue-300">
+                      <span>💡 Recomendaciones y Ayuda Externa</span>
                     </div>
-
-                    <div className="p-4 bg-slate-50 dark:bg-slate-700/40 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-100 dark:border-slate-700">
-                      <div className="text-center sm:text-left">
-                        <span className="text-[10px] text-blue-500 dark:text-blue-400 font-bold block uppercase tracking-wider">GRUPO OFICIAL</span>
-                        <span className="text-xs font-bold text-slate-800 dark:text-white">Comunidad de Apoyo BabyChef</span>
-                      </div>
-                      <a 
-                        href="https://www.facebook.com/share/1MeZZs1BAm/" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-blue-600/10 flex items-center justify-center gap-2 active:scale-98 cursor-pointer"
-                      >
-                        <Facebook className="w-4 h-4 shrink-0" />
-                        <span>Ir al Grupo de Facebook 🚀</span>
-                      </a>
-                    </div>
+                    <p className="text-[11px] opacity-90">
+                      Estas páginas son recomendaciones seleccionadas para apoyar a las madres. Puedes entrar directamente con un solo clic para revisar temas, guías y ver videos explicativos. <em>Nota: No forman parte de la comunidad de Baby Chef, son recursos informativos externos de libre consulta.</em>
+                    </p>
                   </div>
 
-                  {/* What you will find Section */}
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider pl-1">💡 ¿Qué encontrarás en nuestra comunidad?</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
-                        <span className="text-xl">🩺</span>
-                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Orientación de Expertos</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                          Accede a consejos e información confiable compartida por especialistas en pediatría y nutrición infantil.
-                        </p>
-                      </div>
+                  {/* 7 Direct Link Cards */}
+                  <div className="space-y-3">
+                    <h3 className="font-display font-bold text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 pl-1">
+                      🔗 Enlaces Directos de Consulta (Acceso en 1-Clic)
+                    </h3>
 
-                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
-                        <span className="text-xl">🍲</span>
-                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Platos del Día Real</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                          Mira fotos reales de comidas que otras mamás preparan con las recetas de la app para inspirarte diariamente.
-                        </p>
-                      </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {[
+                        {
+                          id: 1,
+                          title: "Página de Recomendación #1",
+                          badge: "Videos & Guías 🎥",
+                          badgeColor: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                          description: "Página externa recomendada con publicaciones, tips y videos útiles sobre alimentación e inicio de sólidos.",
+                          url: "https://www.facebook.com/share/18S4yyXNij/"
+                        },
+                        {
+                          id: 2,
+                          title: "Página de Recomendación #2",
+                          badge: "Nutrición & Consejos 🥗",
+                          badgeColor: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+                          description: "Recurso recomendado de consulta con ideas, recomendaciones prácticas de nutrición e información para mamás.",
+                          url: "https://www.facebook.com/share/1DYJACjNNf/"
+                        },
+                        {
+                          id: 3,
+                          title: "Página de Recomendación #3",
+                          badge: "Ideas & Demostraciones 👶",
+                          badgeColor: "bg-pink-100 text-pink-700 dark:bg-pink-950 dark:text-pink-300",
+                          description: "Espacio de orientación con videos demostrativos, preparaciones sugeridas y apoyo constante para la crianza.",
+                          url: "https://www.facebook.com/share/18PTffLrQJ/"
+                        },
+                        {
+                          id: 4,
+                          title: "Página de Recomendación #4",
+                          badge: "Crianza & Recetas 🥑",
+                          badgeColor: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300",
+                          description: "Página con contenido audiovisual explicativo, experiencias reales e inspiración diaria para la alimentación infantil.",
+                          url: "https://www.facebook.com/share/19568Lq1fi/"
+                        },
+                        {
+                          id: 5,
+                          title: "Página de Recomendación #5",
+                          badge: "Inicio de Sólidos 🥣",
+                          badgeColor: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+                          description: "Acceso directo a videos cortos, infografías e información para guiarte paso a paso en cada etapa del bebé.",
+                          url: "https://www.facebook.com/share/1DQ6ydZhLV/"
+                        },
+                        {
+                          id: 6,
+                          title: "Página de Recomendación #6",
+                          badge: "Recomendaciones 🌟",
+                          badgeColor: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300",
+                          description: "Comunidad informativa externa con valiosos recursos, respuestas a dudas frecuentes y videos demostrativos.",
+                          url: "https://www.facebook.com/share/1EHMMrbMUS/"
+                        },
+                        {
+                          id: 7,
+                          title: "Página de Recomendación #7",
+                          badge: "Orientación & Apoyo 💡",
+                          badgeColor: "bg-teal-100 text-teal-700 dark:bg-teal-950 dark:text-teal-300",
+                          description: "Recurso complementario de consulta con videos y consejos prácticos para el desarrollo y nutrición del bebé.",
+                          url: "https://www.facebook.com/share/1CobviaUDd/"
+                        }
+                      ].map((item) => (
+                        <div 
+                          key={item.id}
+                          className="bg-white dark:bg-slate-800 p-5 rounded-3xl border border-slate-100 dark:border-slate-700/80 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full ${item.badgeColor}`}>
+                                {item.badge}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-bold">1-Clic 🚀</span>
+                            </div>
 
-                      <div className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-xs space-y-2">
-                        <span className="text-xl">🤝</span>
-                        <h5 className="font-bold text-xs text-slate-800 dark:text-white">Espacio Seguro</h5>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                          Un espacio libre de críticas donde puedes desahogarte, hacer preguntas de cualquier nivel y sentirte acompañada.
-                        </p>
-                      </div>
+                            <h4 className="font-display font-bold text-sm text-slate-800 dark:text-white flex items-center gap-1.5">
+                              <Facebook className="w-4 h-4 text-blue-600 shrink-0" />
+                              <span>{item.title}</span>
+                            </h4>
+
+                            <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed">
+                              {item.description}
+                            </p>
+                          </div>
+
+                          <div className="pt-2 border-t border-slate-100 dark:border-slate-700/60 flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-slate-400 truncate max-w-[150px] sm:max-w-[180px]">
+                              {item.url}
+                            </span>
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1.5 shrink-0 active:scale-95 cursor-pointer"
+                            >
+                              <span>Entrar en 1-Clic</span>
+                              <Facebook className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -4119,7 +4687,7 @@ export default function App() {
         )}
 
         {/* --- LICENSED ORIGINAL USER BADGE (IDEA 4) --- */}
-        {clientEmail && (
+        {!showOnboarding && !showInstallScreen && clientEmail && (
           <div className={`px-4 py-1.5 text-[9px] font-bold flex items-center justify-between gap-2 border-t select-none transition-all ${
             isDarkMode 
               ? "bg-slate-900/85 border-slate-800 text-slate-400" 
@@ -4134,203 +4702,51 @@ export default function App() {
         )}
 
         {/* Responsive Bottom Navigation Tab Bar (Sliding Pastel Pill Menu) */}
-        <div className={`border-t px-3 py-3 select-none flex-shrink-0 transition-colors ${
-          isDarkMode ? "bg-slate-950 border-slate-800" : "bg-gradient-to-r from-pink-50 via-sky-50 to-teal-50 border-pink-100"
-        }`}>
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-1 px-1">
-            {[
-              { id: "dashboard", label: "Inicio", icon: Baby, color: "bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-200" },
-              { id: "recipes", label: "Recetas", icon: Search, color: "bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border-sky-200" },
-              { id: "pdf-planner", label: "Plan PDF", icon: CalendarDays, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
-              { id: "meal-planner", label: "Menú", icon: Calendar, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
-              { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
-              { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
-              { id: "inquietudes", label: "Consultas", icon: HelpCircle, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
-              { id: "comunidad", label: "Comunidad FB", icon: Facebook, color: "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border-blue-200" },
-              { id: "statistics", label: "Métricas", icon: BarChart2, color: "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200" }
-            ].map(item => {
-              const IconComponent = item.icon;
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setSelectedArticle(null);
-                  }}
-                  className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
-                    isActive
-                      ? `${item.color} shadow-xs scale-105 border`
-                      : isDarkMode
-                      ? "bg-slate-900 border-transparent text-slate-400 hover:text-slate-200"
-                      : "bg-white/80 border-slate-100 text-slate-500 hover:text-slate-800"
-                  }`}
-                >
-                  <IconComponent className="w-3.5 h-3.5" />
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
+        {!showOnboarding && !showInstallScreen && (
+          <div className={`border-t px-3 py-3 select-none flex-shrink-0 transition-colors ${
+            isDarkMode ? "bg-slate-950 border-slate-800" : "bg-gradient-to-r from-pink-50 via-sky-50 to-teal-50 border-pink-100"
+          }`}>
+            <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-1 px-1">
+              {[
+                { id: "dashboard", label: "Inicio", icon: Baby, color: "bg-teal-100 dark:bg-teal-950 text-teal-700 dark:text-teal-300 border-teal-200" },
+                { id: "statistics", label: "Crecimiento del Bebé", icon: BarChart2, color: "bg-orange-100 dark:bg-orange-950 text-orange-700 dark:text-orange-300 border-orange-200" },
+                { id: "recipes", label: "Recetas", icon: Search, color: "bg-sky-100 dark:bg-sky-950 text-sky-700 dark:text-sky-300 border-sky-200" },
+                { id: "pdf-planner", label: "Plan PDF", icon: CalendarDays, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
+                { id: "meal-planner", label: "Menú", icon: Calendar, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
+                { id: "shopping-list", label: "Compras", icon: ShoppingCart, color: "bg-amber-100 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border-amber-200" },
+                { id: "guides", label: "Guías", icon: BookOpen, color: "bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-indigo-200" },
+                { id: "inquietudes", label: "Consultas", icon: HelpCircle, color: "bg-pink-100 dark:bg-pink-950 text-pink-700 dark:text-pink-300 border-pink-200" },
+                { id: "comunidad", label: "Páginas FB", icon: Facebook, color: "bg-blue-100 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border-blue-200" }
+              ].map(item => {
+                const IconComponent = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setSelectedArticle(null);
+                    }}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-xs font-bold transition-all flex-shrink-0 cursor-pointer ${
+                      isActive
+                        ? `${item.color} shadow-xs scale-105 border`
+                        : isDarkMode
+                        ? "bg-slate-900 border-transparent text-slate-400 hover:text-slate-200"
+                        : "bg-white/80 border-slate-100 text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    <IconComponent className="w-3.5 h-3.5" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        )}
 
       </div> {/* Close Mobile Device Container */}
 
-      {/* ================= CUSTOM PWA INSTALLATION MODAL ================= */}
-      {showInstallModal && (
-        <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-[100] p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-[420px] shadow-2xl overflow-hidden border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left">
-            
-            {/* Header */}
-            <div className="px-5 py-4 bg-gradient-to-r from-pink-500 to-rose-500 text-white flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <span className="text-xl">📲</span>
-                <div>
-                  <h3 className="font-display font-extrabold text-xs sm:text-sm">Instalar BabyChef App</h3>
-                  <p className="text-[10px] opacity-90">Acceso rápido desde tu pantalla de inicio</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowInstallModal(false)}
-                className="p-1 hover:bg-white/15 rounded-lg transition-colors cursor-pointer text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {/* Body */}
-            <div className="p-5 space-y-4">
-              
-              {/* CASE 1: Inside an iframe (AI Studio preview, etc) */}
-              {(typeof window !== "undefined" && window.self !== window.top) ? (
-                <div className="space-y-3.5">
-                  <div className="p-3.5 bg-amber-500/10 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-2xl flex gap-2.5">
-                    <span className="text-xl shrink-0">⚠️</span>
-                    <p className="text-[11px] text-amber-800 dark:text-amber-300 leading-relaxed font-semibold">
-                      Estás viendo la aplicación en modo de vista previa (iframe). Los navegadores bloquean la instalación directa de PWAs desde marcos virtuales.
-                    </p>
-                  </div>
-                  <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                    Para poder instalar <strong>BabyChef</strong> directamente en tu celular o computadora con un solo clic, debes abrir la aplicación en una pestaña nueva o en tu navegador móvil.
-                  </p>
-                  <button
-                    onClick={() => {
-                      window.open(window.location.href, "_blank");
-                      setShowInstallModal(false);
-                    }}
-                    className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl transition-all flex items-center justify-center gap-1.5 shadow-md shadow-pink-500/10 active:scale-[0.98] cursor-pointer"
-                  >
-                    <span>Abrir en Pestaña Nueva 🚀</span>
-                  </button>
-                </div>
-              ) : (
-                /* CASE 2: Outside iframe (standalone browser) */
-                <div className="space-y-4">
-                  {/* iOS / Safari Detection */}
-                  {typeof navigator !== "undefined" && /iPad|iPhone|iPod/.test(navigator.userAgent) ? (
-                    <div className="space-y-3">
-                      <div className="p-3 bg-blue-500/10 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-900/40 rounded-2xl">
-                        <span className="text-xs font-bold text-blue-700 dark:text-blue-400 block mb-1">📢 Instrucciones para iPhone / iPad (Safari)</span>
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                          iOS no permite la instalación automática con un botón. Sigue estos simples pasos para instalarla:
-                        </p>
-                      </div>
-                      <ol className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300 pl-1">
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
-                          <span className="leading-relaxed">Presiona el botón de <strong>Compartir</strong> en la barra de tu navegador Safari (icono de un cuadrado con una flecha hacia arriba 📤).</span>
-                        </li>
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
-                          <span className="leading-relaxed">Desliza hacia abajo en las opciones de menú y selecciona <strong>"Agregar a pantalla de inicio"</strong> o <strong>"Add to Home Screen"</strong> ➕.</span>
-                        </li>
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-pink-500 bg-pink-50 dark:bg-pink-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
-                          <span className="leading-relaxed">Escribe un nombre si lo deseas y presiona <strong>"Agregar"</strong> arriba a la derecha. ¡Listo!</span>
-                        </li>
-                      </ol>
-                    </div>
-                  ) : (
-                    /* Android or Desktop fallback */
-                    <div className="space-y-3">
-                      <div className="p-3.5 bg-emerald-500/10 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/40 rounded-2xl">
-                        <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                          Si tu navegador soporta instalación directa pero no se mostró el diálogo automático, puedes instalar la aplicación de forma manual en segundos:
-                        </p>
-                      </div>
-                      <ol className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300 pl-1">
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">1</span>
-                          <span className="leading-relaxed">Busca el menú de <strong>tres puntos (⋮)</strong> o el icono de <strong>instalación (📥)</strong> en la barra de direcciones de tu navegador (Chrome/Edge/Samsung Internet).</span>
-                        </li>
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">2</span>
-                          <span className="leading-relaxed">Selecciona la opción <strong>"Instalar aplicación"</strong> o <strong>"Agregar a la pantalla principal"</strong>.</span>
-                        </li>
-                        <li className="flex gap-2 items-start">
-                          <span className="font-extrabold text-emerald-500 bg-emerald-50 dark:bg-emerald-950/30 w-5 h-5 rounded-full flex items-center justify-center shrink-0">3</span>
-                          <span className="leading-relaxed">Confirma la instalación y BabyChef aparecerá en tu menú de aplicaciones de tu celular o escritorio de tu PC.</span>
-                        </li>
-                      </ol>
-                    </div>
-                  )}
-                  
-                  <button
-                    onClick={() => setShowInstallModal(false)}
-                    className="w-full py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-white font-extrabold text-xs rounded-xl transition-all cursor-pointer text-center"
-                  >
-                    Entendido
-                  </button>
-                </div>
-              )}
-
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= DIRECT PWA AUTO-PROMPTER POPUP ================= */}
-      {showDirectInstallPopup && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[110] p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-[360px] shadow-2xl p-6 border border-slate-100 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-center space-y-5">
-            
-            {/* Logo display */}
-            <div className="flex justify-center">
-              <div className="relative w-20 h-20 rounded-2xl overflow-hidden shadow-md border-2 border-pink-100 dark:border-pink-900/40">
-                <img src="/logo.png" alt="BabyChef" className="w-full h-full object-cover" />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <h3 className="font-display font-extrabold text-base sm:text-lg text-slate-800 dark:text-white">
-                ¡Instalar BabyChef App! 📲
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                Disfruta de BabyChef con acceso directo en tu pantalla de inicio, inicio rápido en pantalla completa y la mejor experiencia de usuario.
-              </p>
-            </div>
-
-            <div className="space-y-2.5 pt-1">
-              <button
-                onClick={() => {
-                  setShowDirectInstallPopup(false);
-                  handleInstallClick();
-                }}
-                className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-pink-500/10 active:scale-[0.98] cursor-pointer"
-              >
-                Instalar Ahora 🚀
-              </button>
-              <button
-                onClick={() => setShowDirectInstallPopup(false)}
-                className="w-full py-2.5 text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
-              >
-                Quizás más tarde
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
 
       {/* Outer floating disclaimer or footer at desktop level */}
       <footer className="hidden lg:block absolute bottom-2 left-0 right-0 text-center text-[10px] text-pink-700/60 dark:text-indigo-300/40 select-none pointer-events-none">

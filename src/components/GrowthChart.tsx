@@ -383,11 +383,11 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
           </div>
         )}
 
-        {/* Explicación de las Líneas Rojas (como en el Carnet de Vacunación) */}
+        {/* Explicación de las Líneas Rojas */}
         <div className="mt-4 p-3.5 bg-red-50/60 dark:bg-red-950/20 border border-red-100 dark:border-red-900 rounded-xl text-left flex gap-2.5 items-start">
           <span className="text-base select-none leading-none">📊</span>
           <div className="space-y-1">
-            <span className="font-bold text-[11px] text-red-700 dark:text-red-400 block">Líneas Rojas de Control (Carnet de Vacunas)</span>
+            <span className="font-bold text-[11px] text-red-700 dark:text-red-400 block">Líneas Rojas de Control</span>
             <p className="text-[10px] text-slate-600 dark:text-slate-300 leading-relaxed font-medium">
               Las <strong className="text-red-600 dark:text-red-400">Líneas Rojas (Límite Bajo y Límite Alto)</strong> representan los extremos de percentiles de la OMS. Si el punto de tu bebé se sitúa <strong className="text-emerald-600 dark:text-emerald-400">entre ambas líneas rojas</strong>, su crecimiento se encuentra en el rango <strong className="font-bold">Saludable y Óptimo</strong>.
             </p>
@@ -416,7 +416,7 @@ export default function GrowthChart({ entries, onAddEntry, onDeleteEntry, birthD
             if (actual < p15) {
               statusText = "Rango de Peso: Por debajo del rango óptimo";
               statusColorClass = "text-rose-600 bg-rose-50/60 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900";
-              statusAdvice = "El peso actual de tu bebé está por debajo de las curvas estándar de vacunación. Asegúrate de ofrecer tomas a demanda y porciones densas en nutrientes y grasas saludables (como aguacate, aceites vegetales crudos o yema de huevo). Consulta siempre con tu pediatra de confianza.";
+              statusAdvice = "El peso actual de tu bebé está por debajo de las curvas estándar de la OMS. Asegúrate de ofrecer tomas a demanda y porciones densas en nutrientes y grasas saludables (como aguacate, aceites vegetales crudos o yema de huevo). Consulta siempre con tu pediatra de confianza.";
             } else if (actual > p85) {
               statusText = "Rango de Peso: Por encima del promedio saludable";
               statusColorClass = "text-amber-700 bg-amber-50/60 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900";

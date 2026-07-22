@@ -10,6 +10,18 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Baby Chef - Recetario y Crecimiento</title>
+    <script>
+      // Global variable to stash the prompt event
+      window.deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        // Prevent Chrome 67 and earlier from automatically showing the prompt
+        e.preventDefault();
+        // Stash the event so it can be triggered later.
+        window.deferredPrompt = e;
+        // Dispatch custom event to notify React
+        window.dispatchEvent(new CustomEvent('pwa-prompt-available'));
+      });
+    </script>
   </head>
   <body>
     <div id="root"></div>
