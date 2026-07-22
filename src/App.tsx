@@ -325,6 +325,8 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
   const [showInstallBtn, setShowInstallBtn] = useState<boolean>(true);
   const [showInstallScreen, setShowInstallScreen] = useState<boolean>(false);
+  const [showInstallModal, setShowInstallModal] = useState<boolean>(false);
+  const [installingStatus, setInstallingStatus] = useState<"idle" | "prompting" | "success" | "instructions">("idle");
 
 
 
@@ -584,26 +586,45 @@ export default function App() {
     };
   }, []);
 
-  const handleInstallClick = async () => {
+  const handleInstallClick = () => {
+    setShowInstallModal(true);
+    setInstallingStatus("idle");
+  };
+
+  const handleConfirmInstall = async () => {
+    setInstallingStatus("prompting");
     const promptEvent = deferredPrompt || (window as any).deferredPrompt;
+
     if (promptEvent) {
       try {
         await promptEvent.prompt();
         const { outcome } = await promptEvent.userChoice;
         console.log("Install outcome:", outcome);
-        setDeferredPrompt(null);
-        (window as any).deferredPrompt = null;
-        setShowInstallBtn(false);
-        setShowInstallScreen(false);
+        if (outcome === "accepted") {
+          setInstallingStatus("success");
+          setDeferredPrompt(null);
+          (window as any).deferredPrompt = null;
+          setTimeout(() => {
+            setShowInstallBtn(false);
+            setShowInstallModal(false);
+            setShowInstallScreen(false);
+            setInstallingStatus("idle");
+          }, 1500);
+        } else {
+          // User cancelled in browser native prompt; keep install button visible
+          setInstallingStatus("idle");
+          setShowInstallModal(false);
+        }
       } catch (err) {
-        console.error("Error trigger prompt:", err);
-        setShowInstallScreen(false);
-        setShowInstallBtn(false);
+        console.error("Error triggering prompt:", err);
+        setInstallingStatus("instructions");
       }
     } else {
-      // Direct 1-click execution: enter application cleanly without menu recommendations
-      setShowInstallScreen(false);
-      setShowInstallBtn(false);
+      // Prompt event not yet ready or running in iframe
+      setInstallingStatus("instructions");
+      setTimeout(() => {
+        setShowInstallScreen(false);
+      }, 3000);
     }
   };
 
@@ -1113,6 +1134,75 @@ export default function App() {
             Licencia individual BabyChef. Todos los derechos reservados.
           </div>
         </div>
+
+        {/* ================= PWA INSTALLATION CONFIRMATION MODAL ================= */}
+        {showInstallModal && (
+          <div className="fixed inset-0 bg-black/65 flex items-center justify-center z-50 p-4 backdrop-blur-xs select-none animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 rounded-3xl w-full max-w-sm flex flex-col shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-800 animate-in zoom-in-95 duration-200 text-left p-6 space-y-5">
+              
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-pink-100 dark:bg-pink-950/60 rounded-2xl flex items-center justify-center p-2 border border-pink-200 dark:border-pink-900/40 shrink-0">
+                  <BabyChefLogo className="w-full h-full object-contain" />
+                </div>
+                <div>
+                  <h3 className="font-display font-extrabold text-base text-slate-800 dark:text-white">Instalar App BabyChef</h3>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/40 inline-block mt-0.5">
+                    PWA Oficial 📲
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                  ¿Deseas instalar la aplicación <strong>BabyChef</strong> en tu celular para acceder en un solo clic desde tu pantalla de inicio?
+                </p>
+              </div>
+
+              {installingStatus === "instructions" && (
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed space-y-1 animate-in fade-in duration-300">
+                  <p className="font-bold flex items-center gap-1.5">
+                    <span>✨</span>
+                    <span>Solicitud enviada al navegador</span>
+                  </p>
+                  <p className="text-[11px] opacity-90">
+                    Si tu navegador o celular muestra una ventana emergente o mensaje para confirmar la instalación, presiona en <strong>"Instalar"</strong> o <strong>"Aceptar"</strong>.
+                  </p>
+                </div>
+              )}
+
+              {installingStatus === "success" && (
+                <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 rounded-2xl text-xs text-emerald-800 dark:text-emerald-300 leading-relaxed font-bold flex items-center gap-2 animate-in fade-in duration-300">
+                  <span className="text-lg">🎉</span>
+                  <span>¡Aplicación instalada con éxito!</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowInstallModal(false);
+                    setInstallingStatus("idle");
+                  }}
+                  className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 active:scale-95 text-slate-700 dark:text-slate-300 font-bold text-xs rounded-xl transition-all cursor-pointer text-center"
+                >
+                  Cancelar
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleConfirmInstall}
+                  disabled={installingStatus === "prompting"}
+                  className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Aceptar e Instalar</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
 
         {/* ================= ADMIN MANAGEMENT PANEL MODAL ================= */}
         {showAdminModal && (
